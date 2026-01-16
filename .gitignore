@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+
+# PyCharm
+.idea/
+
+# Outputs / renders
+outputs/
+renders/
+*.pdf
+*.png
+
+# OS
+.DS_Store
+.venv/
+cache/
+

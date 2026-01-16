@@ -11,8 +11,8 @@ def main() -> None:
     palette_name = "warm"
 
     # Budapest középpont (teszt)
-    center_lat = 41.385812657647385
-    center_lon = 2.154530264356313
+    center_lat = 41.89837034952956
+    center_lon = 12.479193750793703
 
     # Kimeneti mappa (a tiéd)
     output_dir = Path(r"C:\Users\T470\OneDrive\Asztali gép\WEBSHOP")
