@@ -1,98 +1,180 @@
-# City Map Generator
+City Map Generator
 
-Custom, high-resolution city map generator for print-ready posters and webshop products.
+A City Map Generator egy Python-alapú, OpenStreetMap (OSM) adatokra épülő várostérkép-renderelő rendszer, amely nyomdai minőségű, minimalista várostérképeket generál poszterekhez, faliképekhez és webshopos termékekhez.
 
-This project generates stylized city maps from OpenStreetMap data with a strong focus on:
-- clean, modern visual language
-- print quality output (PDF)
-- configurable color palettes
-- scalable layouts for different poster sizes
+A projekt fókusza:
 
-The generator is designed as the backend rendering engine for a future webshop,
-where users will be able to customize location, size, color style, and layout.
+letisztult vizuális stílus,
 
----
+determinisztikus renderelés,
 
-## Features
+OSM-adatok intelligens feldolgozása,
 
-- 📍 Location-based rendering (latitude / longitude)
-- 🗺️ Road network extraction via OSMnx
-- 🧱 City block polygonization and coloring
-- 🎨 Multiple curated color palettes (warm, cool, grayscale, etc.)
-- 📐 Aspect-ratio aware framing based on real-world dimensions
-- 🖨️ Print-ready PDF export with deterministic rendering
-- 🔁 Scalable road widths based on map extent
+skálázható termékméretek (cm → arány → vonalvastagság).
 
----
+✨ Fő jellemzők
 
-## Project Structure
+Monochrome (Pretty) render mód
 
-```text
+járműutak hierarchikus vastagsággal
+
+gyalogos / biciklis / path rétegek alapértelmezésben kizárva
+
+tiszta, poszter-szerű megjelenés
+
+Polygonize-alapú várostömb színezés
+
+Épületek, parkok, ipari területek kezelése
+
+Vízfelületek egységes, fehér renderelése
+
+folyók, tavak, tenger (coastline + sea mask)
+
+Opcionális domborzati árnyalás (hillshade)
+
+Termékméret-független vonalvastagság skálázás
+
+Streamlit-alapú developer style tuner (nem runtime függőség)
+
+🧱 Projektstruktúra
 city_map_generator/
-│
-├─ generator/
-│  ├─ render.py        # Core rendering pipeline
-│  ├─ specs.py         # Product / size specifications
-│  ├─ styles.py        # Color palettes and visual styles
-│
-├─ scripts/
-│  └─ render_example.py  # Example usage (optional)
-│
-├─ outputs/            # Generated PDFs (gitignored)
-├─ README.md
-└─ .gitignore
+├── main.py                     # CLI / entry point
+├── generator/
+│   ├── render_monochrome.py    # Monochrome (pretty) renderer
+│   ├── render_pretty.py        # Legacy / blocks render
+│   ├── styles.py               # Style source of truth
+│   ├── specs.py                # ProductSpec (méretek, DPI, frame)
+│   ├── relief.py               # DEM + hillshade kezelés
+│   ├── presets_loader.py       # (dev helper, opcionális)
+│   └── style_tuner.py          # Developer-only tuner logika
+├── tools/
+│   └── style_tuner_app.py      # Streamlit UI stílus finomhangoláshoz
+└── README.md
 
-```
+🎨 Stílusrendszer
+MonoStyle – az egyetlen „source of truth”
 
-## Example Code
+A monochrome stílus teljes egészében kódban van definiálva:
 
-```code
-from pathlib import Path
-from generator.specs import ProductSpec
-from generator.render import render_city_map
+from generator.styles import MonoStyle, DEFAULT_MONO
+style = DEFAULT_MONO
 
-spec = ProductSpec.from_size_cm(
-    width_cm=70,
-    height_cm=50,
-    extent_m=5000,
-)
 
-render_city_map(
-    center_lat=41.3851,
-    center_lon=2.1734,
+Nincs runtime JSON betöltés, nincs preset varázslás.
+A stílus verziózható, diffelhető, determinisztikus.
+
+Úthierarchia (vastagság)
+
+A vastagság három tényezőből áll össze:
+
+Globális alap
+
+road_width
+
+road_boost
+
+Úttípus-szorzók
+
+lw_highway_mult
+
+lw_arterial_mult
+
+lw_local_mult
+
+lw_minor_mult
+
+Automatikus skálázás
+
+térképkiterjedés alapján (_scaled_linewidth)
+
+Ez biztosítja, hogy a főutak mindig hangsúlyosabbak legyenek.
+
+🛣️ Útkezelési logika (fontos)
+
+A renderer alapértelmezésben kizárja az alábbi OSM highway típusokat:
+
+footway
+
+cycleway
+
+path
+
+pedestrian
+
+steps
+
+bridleway
+
+Ez megszünteti a tipikus OSM-eredetű párhuzamos „szőrös” vonalakat.
+
+Kapcsolható paraméter:
+
+draw_non_vehicular=False  # alapértelmezett
+
+🧭 Használat (CLI)
+Alap futtatás
+python main.py \
+  --center-lat 47.4979 \
+  --center-lon 19.0402 \
+  --width-cm 50 \
+  --height-cm 70 \
+  --output-dir outputs/
+
+Monochrome render (ajánlott)
+result = render_city_map_monochrome(
+    center_lat=...,
+    center_lon=...,
     spec=spec,
-    output_dir=Path("outputs"),
-    palette_name="warm",
+    output_dir=output_dir,
+    zoom=1.0,
+    preset_name="snazzy_bw_blackwater",
+    draw_non_vehicular=False,
 )
-```
 
-This will generate a timestamped, print-ready PDF map centered on the given location.
+🧪 Style Tuner (developer-only)
 
+A Streamlit tuner nem része a runtime pipeline-nak.
 
-## Design Principles
+Célja:
 
-Data-driven geometry – no manual drawing
-Consistent visual hierarchy – blocks, roads, water clearly separated
-Print first – color choices and line widths optimized for large formats
-Deterministic output – same input yields the same result (with seed)
+MonoStyle finomhangolása vizuális preview-val
 
+értékek kézi visszamásolása a styles.py-ba
 
-## Roadmap (High Level)
+Indítás:
 
- Caption / typography layouts (city name, coordinates)
- Preview-optimized low-resolution renders
- Webshop integration (WooCommerce)
- User-selectable styles and palettes
- Automated SVG / DXF export for manufacturing
-
-## Notes
-
-This repository currently contains the rendering engine only.
-Web frontend, order handling, and payment integration are intentionally not included.
-
-## License
-
-Private / All rights reserved (for now).
+streamlit run tools/style_tuner_app.py
 
 
-<img width="793" height="788" alt="image" src="https://github.com/user-attachments/assets/b02b94ea-f9a8-4669-a5c2-cb653f61904f" />
+A tuner nem exportál, nem ír fájlt –
+a végleges stílus mindig hardcode-olt.
+
+🖨️ Kimenetek
+
+PDF – nyomdai minőség (CMYK-kompatibilis workflow)
+
+PNG – preview / fejlesztés
+
+automatikus timestampelt fájlnevek
+
+🔒 Projektállapot
+
+aktív fejlesztés
+
+webshop-integrációra előkészítve
+
+stabil monochrome baseline a main branch-ben
+
+🚀 Következő tervezett lépések
+
+további MonoStyle variánsok (high contrast, ultra minimal)
+
+SVG / DXF export gyártáshoz
+
+webes rendelési felület (map selection + preview)
+
+snap-to-land / coastline-aware framing finomítása
+
+👤 Szerző
+
+Norbert von Polyák
