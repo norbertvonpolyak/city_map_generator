@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Tuple, Dict, Any, List
+from typing import Optional, Tuple, Dict
 
 import math
 import random
@@ -22,77 +22,37 @@ from pyproj import Transformer
 
 from generator.specs import ProductSpec
 from generator.relief import ReliefConfig, load_dem_wgs84_crop, hillshade, normalize_grayscale
-
-# reuse "pretty" helpers
 from generator.render_pretty import _fetch_water_union, _fetch_sea_polygon, _scaled_linewidth
+from generator.styles import MonoStyle, MONO_PRESETS
 
 
 @dataclass(frozen=True)
 class RenderResult:
-    output_pdf: Path
+    output_pdf: Optional[Path] = None
+    output_png: Optional[Path] = None
 
 
-def _safe_timestamp() -> str:
-    return datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-
-
-# ----------------------------
-# Snazzy-like style (mapping)
-# ----------------------------
-@dataclass(frozen=True)
-class MonoSnazzyStyle:
-    background: str = "#ffffff"
-
-    # landuse/parks (ha rajzolod őket)
-    land_fill: str = "#ffffff"
-    park_fill: str = "#ffffff"
-    industrial_fill: str = "#ffffff"
-
-    # water: fekete
-    water_fill: str = "#000000"
-    water_edge: str = "#000000"
-
-    # buildings: nagyon halvány vagy akár off
-    buildings_fill: str = "#f4f4f4"
-
-    # highways + arterial: fekete (stroke off-hoz is igazítjuk mindjárt)
-    highway_fill: str = "#000000"
-    highway_stroke: str = "#000000"
-
-    arterial_fill: str = "#000000"
-    arterial_stroke: str = "#000000"
-
-    # local: szürke
-    local_fill: str = "#808080"
-    local_stroke: str = "#808080"
-
-    # minor: még halványabb szürke (ha szeretnéd)
-    minor_fill: str = "#9a9a9a"
-    minor_stroke: str = "#9a9a9a"
-
-    # rail: opcionális, halvány
-    rail_color: str = "#808080"
-
-    # ordering
-    z_land: int = 5
-    z_buildings: int = 10
-    z_water: int = 15
-    z_roads_stroke: int = 50
-    z_roads_fill: int = 50
-    z_rail: int = 35
-
-
-STYLE = MonoSnazzyStyle()
-
-
-# Highway grouping similar to Google categories
+# --- Road classification (OSM highway -> our classes) ---
 HIGHWAY_HIGHWAY = {"motorway", "trunk"}
 HIGHWAY_ARTERIAL = {"primary", "secondary", "tertiary"}
 HIGHWAY_LOCAL = {"residential", "unclassified", "living_street"}
-HIGHWAY_MINOR = {"service", "pedestrian", "cycleway", "footway", "path", "steps"}
 
+# IMPORTANT:
+# "minor" legyen jármű-út jellegű (service), NE a gyalog/bicikli/path réteg.
+HIGHWAY_MINOR = {"service"}
 
-# For optional "no parallel lines" collapse
+# Nem-jármű "highway" típusok, amik nagyon gyakran párhuzamos vonalakat okoznak
+# (külön OSM way-ként a főút mellett / felett).
+EXCLUDE_NON_VEHICULAR_HIGHWAYS = {
+    "pedestrian",
+    "cycleway",
+    "footway",
+    "path",
+    "steps",
+    "bridleway",
+}
+
+# For optional "collapse parallels" (rang a preferált kiválasztáshoz)
 HIGHWAY_RANK = {
     "motorway": 10,
     "trunk": 9,
@@ -103,6 +63,7 @@ HIGHWAY_RANK = {
     "unclassified": 4,
     "living_street": 4,
     "service": 3,
+    # az alábbiak maradnak, mert ha draw_non_vehicular=True, akkor lehet értelme:
     "pedestrian": 3,
     "cycleway": 2,
     "footway": 2,
@@ -111,16 +72,22 @@ HIGHWAY_RANK = {
 }
 
 
-def _to_bbox_wgs84_from_proj_bounds(bounds_proj: Tuple[float, float, float, float], crs_proj) -> Tuple[float, float, float, float]:
-    minx, miny, maxx, maxy = bounds_proj
-    transformer = Transformer.from_crs(crs_proj, "EPSG:4326", always_xy=True)
-    lon1, lat1 = transformer.transform(minx, miny)
-    lon2, lat2 = transformer.transform(maxx, maxy)
-    return (min(lon1, lon2), min(lat1, lat2), max(lon1, lon2), max(lat1, lat2))
+def _safe_timestamp() -> str:
+    return datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
 
 def _normalize_highway_value(v):
+    # OSMnx-ben a highway gyakran listás (pl. több tag)
     return v[0] if isinstance(v, (list, tuple)) and v else v
+
+
+def _highway_has_any(v, banned: set[str]) -> bool:
+    """
+    highway attribútum lehet str vagy lista/tuple. True, ha bármelyik eleme tiltott.
+    """
+    if isinstance(v, (list, tuple, set)):
+        return any(str(x) in banned for x in v)
+    return str(v) in banned
 
 
 def _classify_road(hw: str) -> str:
@@ -134,6 +101,17 @@ def _classify_road(hw: str) -> str:
     if hw in HIGHWAY_MINOR:
         return "minor"
     return "local"
+
+
+def _to_bbox_wgs84_from_proj_bounds(
+    bounds_proj: Tuple[float, float, float, float],
+    crs_proj,
+) -> Tuple[float, float, float, float]:
+    minx, miny, maxx, maxy = bounds_proj
+    transformer = Transformer.from_crs(crs_proj, "EPSG:4326", always_xy=True)
+    lon1, lat1 = transformer.transform(minx, miny)
+    lon2, lat2 = transformer.transform(maxx, maxy)
+    return (min(lon1, lon2), min(lat1, lat2), max(lon1, lon2), max(lat1, lat2))
 
 
 def _line_bearing_deg(geom) -> float:
@@ -165,10 +143,15 @@ def collapse_parallel_roads(
     angle_tol_deg: float = 12.0,
     prefer_higher_rank: bool = True,
 ) -> gpd.GeoDataFrame:
+    """
+    Aggressive: within a corridor (near + roughly parallel), keep exactly one line.
+    Use only if you explicitly want to eliminate any parallel depiction.
+    """
     if gdf_edges_p is None or len(gdf_edges_p) == 0:
         return gdf_edges_p
 
     gdf = gdf_edges_p.copy()
+
     if "highway" in gdf.columns:
         gdf["highway"] = gdf["highway"].apply(_normalize_highway_value)
     else:
@@ -178,7 +161,6 @@ def collapse_parallel_roads(
     gdf["rank"] = gdf["highway"].map(lambda h: HIGHWAY_RANK.get(str(h), 0)).astype(int)
 
     sidx = gdf.sindex
-
     keep = np.ones(len(gdf), dtype=bool)
     visited = np.zeros(len(gdf), dtype=bool)
 
@@ -227,8 +209,18 @@ def collapse_parallel_roads(
     return gdf.loc[keep].drop(columns=["bearing", "rank"], errors="ignore")
 
 
-def _plot_two_pass(ax, gdf: gpd.GeoDataFrame, lw: float, fill: str, stroke: str,
-                   z_stroke: int, z_fill: int, *, stroke_enabled: bool = True):
+def _plot_two_pass(
+    ax,
+    gdf: gpd.GeoDataFrame,
+    lw: float,
+    fill: str,
+    stroke: str,
+    z_stroke: int,
+    z_fill: int,
+    *,
+    stroke_enabled: bool,
+    stroke_mult: float,
+):
     if gdf is None or len(gdf) == 0:
         return
 
@@ -236,7 +228,7 @@ def _plot_two_pass(ax, gdf: gpd.GeoDataFrame, lw: float, fill: str, stroke: str,
         gdf.plot(
             ax=ax,
             color=stroke,
-            linewidth=lw * 1.45,
+            linewidth=lw * float(stroke_mult),
             alpha=1.0,
             capstyle="round",
             joinstyle="round",
@@ -254,7 +246,6 @@ def _plot_two_pass(ax, gdf: gpd.GeoDataFrame, lw: float, fill: str, stroke: str,
     )
 
 
-
 def render_city_map_monochrome(
     *,
     center_lat: float,
@@ -266,31 +257,37 @@ def render_city_map_monochrome(
     filename_prefix: str = "city_mono",
     network_type_draw: str = "all",
 
-    # content layers
+    # layers
     show_buildings: bool = True,
     min_building_area: float = 12.0,
     show_landuse: bool = True,
     show_parks: bool = True,
     show_rail: bool = True,
 
-    # relief (optional)
+    # relief
     relief: ReliefConfig = ReliefConfig(),
 
-    # controls
-    road_width: float = 1.25,
-    road_boost: float = 1.0,  # global multiplier
+    # style
+    style: Optional[MonoStyle] = None,
+    preset_name: str = "snazzy_bw_blackwater",
+
+    # IMPORTANT: ha False, kiszűrjük a footway/cycleway/path/pedestrian/steps réteget,
+    # ami a párhuzamos "dupla" vonalak leggyakoribb oka.
+    draw_non_vehicular: bool = False,
+
+    # geometry cleanup (optional)
     collapse_parallels: bool = False,
     parallel_tol_m: float = 7.0,
     parallel_angle_tol_deg: float = 12.0,
+
+    # output
+    preview: bool = False,
 ) -> RenderResult:
     """
-    SnazzyMaps-like monochrome:
-      - water is gray
-      - land is light gray
-      - roads have stroke + fill (two-pass) and hierarchy
-      - labels are not drawn
+    Monochrome renderer controlled by MonoStyle presets.
+    preview=True -> saves PNG for fast iteration (Streamlit).
+    preview=False -> saves PDF for print.
     """
-
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -298,17 +295,26 @@ def render_city_map_monochrome(
         np.random.seed(seed)
         random.seed(seed)
 
+    if style is None:
+        style = MONO_PRESETS.get(preset_name)
+        if style is None:
+            raise ValueError(
+                f"Unknown mono preset '{preset_name}'. Available: {list(MONO_PRESETS.keys())}"
+            )
+
     fig_w_in, fig_h_in = spec.fig_size_inches
 
     half_width_m, half_height_m = spec.frame_half_sizes_m
     half_width_m = float(half_width_m) * float(zoom)
     half_height_m = float(half_height_m) * float(zoom)
 
-    dist_m = int(np.ceil((half_width_m**2 + half_height_m**2) ** 0.5)) + 300
+    dist_m = int(np.ceil((half_width_m ** 2 + half_height_m ** 2) ** 0.5)) + 300
 
     ts = _safe_timestamp()
-    output_pdf = output_dir / f"{filename_prefix}_{spec.width_cm}x{spec.height_cm}cm_z{zoom:.2f}_{ts}.pdf"
+    out_pdf = output_dir / f"{filename_prefix}_{spec.width_cm}x{spec.height_cm}cm_z{zoom:.2f}_{ts}.pdf"
+    out_png = output_dir / f"{filename_prefix}_{spec.width_cm}x{spec.height_cm}cm_z{zoom:.2f}_{ts}.png"
 
+    # center in projected CRS
     center = gpd.GeoDataFrame(geometry=[Point(center_lon, center_lat)], crs="EPSG:4326")
     center_p = ox.projection.project_gdf(center).geometry.iloc[0]
 
@@ -318,7 +324,7 @@ def render_city_map_monochrome(
     maxy = center_p.y + half_height_m
     clip_rect = box(minx, miny, maxx, maxy)
 
-    # --- Roads (fetch directed, draw undirected) ---
+    # --- Roads ---
     G = ox.graph_from_point(
         (center_lat, center_lon),
         dist=dist_m,
@@ -334,6 +340,18 @@ def render_city_map_monochrome(
     edges_p = ox.projection.project_gdf(edges)
     edges_p = gpd.clip(edges_p, gpd.GeoSeries([clip_rect], crs=edges_p.crs))
 
+    # --- Filter out non-vehicular highway ways (to avoid parallel clutter) ---
+    if "highway" in edges_p.columns and not draw_non_vehicular:
+        mask = edges_p["highway"].apply(
+            lambda v: not _highway_has_any(v, EXCLUDE_NON_VEHICULAR_HIGHWAYS)
+        )
+        edges_p = edges_p.loc[mask].copy()
+
+        # Optional: ha járda külön attribútumként jelen van (ritkább graph-edge eset)
+        if "footway" in edges_p.columns:
+            edges_p = edges_p.loc[edges_p["footway"].astype(str) != "sidewalk"].copy()
+
+    # --- Classification ---
     if "highway" in edges_p.columns:
         edges_p["highway"] = edges_p["highway"].apply(_normalize_highway_value)
         edges_p["road_class"] = edges_p["highway"].apply(_classify_road)
@@ -347,10 +365,23 @@ def render_city_map_monochrome(
             angle_tol_deg=parallel_angle_tol_deg,
             prefer_higher_rank=True,
         )
+        if "highway" in edges_p.columns:
+            edges_p["road_class"] = edges_p["highway"].apply(_classify_road)
 
-    # --- Water/Sea (same as pretty) ---
-    inland_water_union = _fetch_water_union(center_lat=center_lat, center_lon=center_lon, dist_m=dist_m, clip_rect=clip_rect)
-    sea_poly = _fetch_sea_polygon(center_point_proj=center_p, center_lat=center_lat, center_lon=center_lon, dist_m=dist_m, clip_rect=clip_rect)
+    # --- Water/Sea ---
+    inland_water_union = _fetch_water_union(
+        center_lat=center_lat,
+        center_lon=center_lon,
+        dist_m=dist_m,
+        clip_rect=clip_rect,
+    )
+    sea_poly = _fetch_sea_polygon(
+        center_point_proj=center_p,
+        center_lat=center_lat,
+        center_lon=center_lon,
+        dist_m=dist_m,
+        clip_rect=clip_rect,
+    )
 
     water_union = None
     if inland_water_union is not None or sea_poly is not None:
@@ -361,7 +392,7 @@ def render_city_map_monochrome(
             parts.append(sea_poly)
         water_union = unary_union(parts).intersection(clip_rect)
 
-    # --- Landuse / parks ---
+    # --- Landuse / Parks ---
     landuse_gdf_p = None
     parks_gdf_p = None
     if show_landuse or show_parks:
@@ -382,7 +413,6 @@ def render_city_map_monochrome(
             gdf_lu_p = gpd.clip(gdf_lu_p, gpd.GeoSeries([clip_rect], crs=gdf_lu_p.crs))
             gdf_lu_p = gdf_lu_p[~gdf_lu_p.is_empty]
             if len(gdf_lu_p) > 0:
-                # split parks (leisure=park) and generic landuse
                 if "leisure" in gdf_lu_p.columns:
                     parks = gdf_lu_p[gdf_lu_p["leisure"].astype(str) == "park"].copy()
                     if len(parks) > 0:
@@ -410,7 +440,6 @@ def render_city_map_monochrome(
             if len(bld_p) == 0:
                 bld_p = None
 
-    # Cut buildings out of water
     if water_union is not None and not water_union.is_empty and bld_p is not None and len(bld_p) > 0:
         bld_p = bld_p.copy()
         bld_p["geometry"] = bld_p.geometry.difference(water_union)
@@ -418,7 +447,7 @@ def render_city_map_monochrome(
         if len(bld_p) == 0:
             bld_p = None
 
-    # --- Rail (optional) ---
+    # --- Rail ---
     rail_p = None
     if show_rail:
         try:
@@ -437,28 +466,29 @@ def render_city_map_monochrome(
     # --- Linewidth scaling ---
     lw = _scaled_linewidth(
         half_height_m=half_height_m,
-        base_linewidth=road_width,
+        base_linewidth=float(style.road_width),
         reference_half_height_m=2000.0,
-        min_lw=0.25,
-        max_lw=3.0,
-    ) * float(road_boost)
+        min_lw=0.20,
+        max_lw=4.0,
+    ) * float(style.road_boost)
 
-    # --- Relief bbox in WGS84 (optional) ---
+    # Relief bbox (optional)
     bbox_wgs84 = _to_bbox_wgs84_from_proj_bounds((minx, miny, maxx, maxy), edges_p.crs)
 
     # --- Plot ---
     fig, ax = plt.subplots(figsize=(fig_w_in, fig_h_in))
-    fig.patch.set_facecolor(STYLE.background)
-    ax.set_facecolor(STYLE.background)
+    fig.patch.set_facecolor(style.background)
+    ax.set_facecolor(style.background)
 
-    # Relief first (very subtle) - but snazzy style usually doesn't need it
+    # Relief first (subtle)
     if relief.enabled:
         try:
             dem_pack = load_dem_wgs84_crop(bbox_wgs84, relief.cache_dir)
             if dem_pack is not None:
                 dem, dem_transform, _ = dem_pack
                 shade01 = hillshade(
-                    dem, dem_transform,
+                    dem,
+                    dem_transform,
                     azimuth_deg=relief.azimuth_deg,
                     altitude_deg=relief.altitude_deg,
                     z_factor=relief.z_factor,
@@ -472,63 +502,96 @@ def render_city_map_monochrome(
 
     # Landuse / parks
     if landuse_gdf_p is not None and len(landuse_gdf_p) > 0:
-        # industrial a bit different if present
         if "landuse" in landuse_gdf_p.columns:
             ind = landuse_gdf_p[landuse_gdf_p["landuse"].astype(str) == "industrial"]
             rest = landuse_gdf_p[landuse_gdf_p["landuse"].astype(str) != "industrial"]
             if len(rest) > 0:
-                rest.plot(ax=ax, color=STYLE.land_fill, linewidth=0, zorder=STYLE.z_land)
+                rest.plot(ax=ax, color=style.land_fill, linewidth=0, zorder=5)
             if len(ind) > 0:
-                ind.plot(ax=ax, color=STYLE.industrial_fill, linewidth=0, zorder=STYLE.z_land)
+                ind.plot(ax=ax, color=style.industrial_fill, linewidth=0, zorder=5)
         else:
-            landuse_gdf_p.plot(ax=ax, color=STYLE.land_fill, linewidth=0, zorder=STYLE.z_land)
+            landuse_gdf_p.plot(ax=ax, color=style.land_fill, linewidth=0, zorder=5)
 
     if parks_gdf_p is not None and len(parks_gdf_p) > 0:
-        parks_gdf_p.plot(ax=ax, color=STYLE.park_fill, linewidth=0, zorder=STYLE.z_land + 1)
+        parks_gdf_p.plot(ax=ax, color=style.park_fill, linewidth=0, zorder=6)
 
     # Buildings
     if bld_p is not None and len(bld_p) > 0:
-        bld_p.plot(ax=ax, color=STYLE.buildings_fill, linewidth=0, zorder=STYLE.z_buildings)
+        bld_p.plot(ax=ax, color=style.buildings_fill, linewidth=0, zorder=10)
 
-    # Water mask (mid gray)
+    # Water (víz mindig fehér, edge most nincs kirajzolva külön)
     if water_union is not None and not water_union.is_empty:
         gpd.GeoSeries([water_union], crs=edges_p.crs).plot(
             ax=ax,
-            color=STYLE.water_fill,
-            edgecolor=STYLE.water_edge,
+            color=style.water_fill,
+            edgecolor=style.water_edge,
             linewidth=0,
-            zorder=STYLE.z_water,
+            zorder=15,
         )
 
-    # Rail (very subtle)
+    # Rail
     if rail_p is not None and len(rail_p) > 0:
-        rail_p.plot(ax=ax, color=STYLE.rail_color, linewidth=max(0.1, lw * 0.4), zorder=STYLE.z_rail)
+        rail_p.plot(ax=ax, color=style.rail_color, linewidth=max(0.10, lw * 0.35), zorder=35)
 
-    # Roads split by class, two-pass
+    # Roads by class
     roads_by_class: Dict[str, gpd.GeoDataFrame] = {}
     for cls in ["highway", "arterial", "local", "minor"]:
         roads_by_class[cls] = edges_p[edges_p["road_class"] == cls].copy()
 
-    _plot_two_pass(ax, roads_by_class["minor"], lw * 0.60, STYLE.minor_fill, STYLE.minor_stroke,
-                   STYLE.z_roads_stroke, STYLE.z_roads_fill, stroke_enabled=True)
-
-    _plot_two_pass(ax, roads_by_class["local"], lw * 0.85, STYLE.local_fill, STYLE.local_stroke,
-                   STYLE.z_roads_stroke, STYLE.z_roads_fill, stroke_enabled=True)
-
-    # arterial: stroke OFF (Snazzy szerint)
-    _plot_two_pass(ax, roads_by_class["arterial"], lw * 1.10, STYLE.arterial_fill, STYLE.arterial_stroke,
-                   STYLE.z_roads_stroke, STYLE.z_roads_fill, stroke_enabled=False)
-
-    # highway: stroke OFF (Snazzy szerint)
-    _plot_two_pass(ax, roads_by_class["highway"], lw * 1.35, STYLE.highway_fill, STYLE.highway_stroke,
-                   STYLE.z_roads_stroke, STYLE.z_roads_fill, stroke_enabled=False)
+    _plot_two_pass(
+        ax,
+        roads_by_class["minor"],
+        lw * float(style.lw_minor_mult),
+        style.minor_fill,
+        style.minor_stroke,
+        40,
+        50,
+        stroke_enabled=bool(style.minor_stroke_enabled),
+        stroke_mult=float(style.stroke_mult),
+    )
+    _plot_two_pass(
+        ax,
+        roads_by_class["local"],
+        lw * float(style.lw_local_mult),
+        style.local_fill,
+        style.local_stroke,
+        40,
+        50,
+        stroke_enabled=bool(style.local_stroke_enabled),
+        stroke_mult=float(style.stroke_mult),
+    )
+    _plot_two_pass(
+        ax,
+        roads_by_class["arterial"],
+        lw * float(style.lw_arterial_mult),
+        style.arterial_fill,
+        style.arterial_stroke,
+        40,
+        50,
+        stroke_enabled=bool(style.arterial_stroke_enabled),
+        stroke_mult=float(style.stroke_mult),
+    )
+    _plot_two_pass(
+        ax,
+        roads_by_class["highway"],
+        lw * float(style.lw_highway_mult),
+        style.highway_fill,
+        style.highway_stroke,
+        40,
+        50,
+        stroke_enabled=bool(style.highway_stroke_enabled),
+        stroke_mult=float(style.stroke_mult),
+    )
 
     ax.set_xlim(minx, maxx)
     ax.set_ylim(miny, maxy)
     ax.set_axis_off()
 
-    print("Saving PDF to:", output_pdf)
-    fig.savefig(output_pdf, format="pdf", dpi=spec.dpi, bbox_inches="tight")
-    plt.close(fig)
+    if preview:
+        fig.savefig(out_png, format="png", dpi=min(180, spec.dpi), bbox_inches="tight")
+        plt.close(fig)
+        return RenderResult(output_png=out_png)
 
-    return RenderResult(output_pdf=output_pdf)
+    fig.savefig(out_pdf, format="pdf", dpi=spec.dpi, bbox_inches="tight")
+    plt.close(fig)
+    return RenderResult(output_pdf=out_pdf)

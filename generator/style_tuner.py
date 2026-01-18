@@ -1,6 +1,7 @@
 import streamlit as st
 from pathlib import Path
 
+
 from generator.render_monochrome import render_city_map_monochrome
 from generator.specs import spec_from_size_key
 from generator.relief import ReliefConfig

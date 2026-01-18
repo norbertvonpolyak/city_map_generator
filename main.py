@@ -8,6 +8,7 @@ from generator.render_monochrome import render_city_map_monochrome
 from generator.relief import ReliefConfig
 
 
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="City map renderer")
 
@@ -119,16 +120,13 @@ def main() -> None:
         spec=spec,
         output_dir=args.output_dir,
         zoom=args.zoom,
-        seed=args.seed,
-        network_type_draw=args.mono_network,
-        show_buildings=(not args.no_buildings),
-        min_building_area=args.mono_min_building_area,
+        preset_name="snazzy_bw_blackwater",
         relief=relief_cfg,
-        road_width=args.mono_road_width,
-        road_boost=args.mono_road_boost,
-        parallel_tol_m=args.mono_parallel_tol_m,
-        parallel_angle_tol_deg=args.mono_parallel_angle_deg,
+
+        draw_non_vehicular=False,  # FALSE -> gyalog/bicikli/path NEM rajzolódik
+        # collapse_parallels=False, # opcionális, default is False
     )
+
     print("Monochrome output:", result.output_pdf)
 
 
