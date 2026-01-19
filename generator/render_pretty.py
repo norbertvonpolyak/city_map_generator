@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, List, Iterable
+from typing import Optional, List
 
 import numpy as np
 import geopandas as gpd
@@ -34,6 +34,12 @@ EXCLUDE_NON_VEHICULAR_HIGHWAYS: set[str] = {
     "steps",
     "bridleway",
 }
+
+# --- Road classification sets (same intent as monochrome) ---
+HIGHWAY_HIGHWAY = {"motorway", "trunk"}
+HIGHWAY_ARTERIAL = {"primary", "secondary", "tertiary"}
+HIGHWAY_LOCAL = {"residential", "unclassified", "living_street"}
+HIGHWAY_MINOR = {"service"}  # minor legyen jármű-út jellegű
 
 
 def _safe_timestamp() -> str:
@@ -74,6 +80,19 @@ def _highway_has_any(v, banned: set[str]) -> bool:
     return str(v) in banned
 
 
+def _classify_road(hw: str) -> str:
+    hw = str(hw)
+    if hw in HIGHWAY_HIGHWAY:
+        return "highway"
+    if hw in HIGHWAY_ARTERIAL:
+        return "arterial"
+    if hw in HIGHWAY_LOCAL:
+        return "local"
+    if hw in HIGHWAY_MINOR:
+        return "minor"
+    return "local"
+
+
 def _fetch_water_union(
     *,
     center_lat: float,
@@ -85,14 +104,9 @@ def _fetch_water_union(
     Belvizek union (Polygon/MultiPolygon) projekcióban, frame-re vágva.
     """
     tags = {
-        # klasszikus vízpoligonok
         "natural": ["water", "bay"],
         "water": True,
-
-        # vízfolyások (vonalakból néha poligon is lehet a gdf-ben)
         "waterway": ["river", "canal", "dock", "basin"],
-
-        # mesterséges / kikötői vízterek
         "landuse": ["reservoir", "basin"],
         "man_made": ["dock"],
         "harbour": True,
@@ -131,13 +145,10 @@ def _fetch_sea_polygon(
     """
     Tenger polygon becslése coastline (natural=coastline) alapján.
 
-    Bulletproof heurisztika:
     - polygonize(frame_boundary + coastline)
-    - LAND = az a poligon, amelyik tartalmazza a center_point_proj pontot
+    - LAND = poligon, ami tartalmazza a center_point_proj pontot
     - SEA = frame - LAND
-    - fallback: boundary-touch (4 oldal) guard-rail küszöbökkel
-
-    Inland városnál nincs coastline -> None (és NEM dob hibát).
+    - fallback: boundary-touch guard-rail küszöbökkel
     """
     tags = {"natural": ["coastline"]}
     try:
@@ -239,8 +250,8 @@ def _fetch_sea_polygon(
 
 def _relative_luminance(hex_color: str) -> float:
     """
-    Approx WCAG-ish relative luminance in [0,1] from #RRGGBB.
-    We only need ordering, not absolute correctness.
+    Approx relative luminance in [0,1] from #RRGGBB.
+    Ordering is what we need.
     """
     s = hex_color.strip().lstrip("#")
     if len(s) != 6:
@@ -269,28 +280,31 @@ def render_city_map_pretty(
     style: Style = DEFAULT_STYLE,
     seed: Optional[int] = 42,
     filename_prefix: str = "city_pretty",
-    network_type_draw: str = "all",   # fontos: így jönnek a kisebb utcák is
+    network_type_draw: str = "all",
     zoom: float = 0.6,
 
-    # NOTE: defaultot felhúztuk a monochrome-hoz közel, hogy "ugyanolyan" legyen
+    # base control (skálázódik extent alapján)
     road_width: float = 1.15,
 
-    min_building_area: float = 12.0,  # m^2 – nagyon apró building sliverek szűrése
+    # NEW: rang szerinti vastagság (monochrome jelleggel)
+    road_boost: float = 1.1,
+    lw_highway_mult: float = 3.8,
+    lw_arterial_mult: float = 2.8,
+    lw_local_mult: float = 1.8,
+    lw_minor_mult: float = 1.2,
 
-    # NEW: pretty-ben is szűrjük a nem-jármű utakat (mint monochrome)
+    min_building_area: float = 12.0,
+
     draw_non_vehicular: bool = False,
 
-    # NEW: road color sötétszürke
-    road_color: str = "#555555",
+    road_color: str = "#404040",
 ) -> RenderResult:
     """
     Prettymaps-szerű (réteges) render:
-    - ugyanaz a termékméret (spec), ugyanaz a PDF export
-    - zoom: kisebb kiterjedés (épület részletekhez)
-    - rétegek: background/land, parks (opcionális), buildings, water (white), roads (dark gray)
-    - víz: belvíz + tenger (coastline), mind fehér
-    - roads: nem-jármű utak (footway/cycleway/path/...) szűrhetők
-    - palette: background = legvilágosabb; buildings = a többi szín random
+    - palette: background = legvilágosabb; buildings = többi szín random
+    - roads: sötétszürke + rang szerinti vastagítás (highway>arterial>local>minor)
+    - non-vehicular highway réteg (footway/cycleway/path/...) szűrhető
+    - víz: belvíz + tenger fehér
     """
     if not (-90.0 <= center_lat <= 90.0):
         raise ValueError("center_lat érvénytelen (−90..90).")
@@ -316,14 +330,14 @@ def render_city_map_pretty(
     half_width_m = float(half_width_m) * float(zoom)
     half_height_m = float(half_height_m) * float(zoom)
 
-    # Road width skálázás (ugyanaz a logika, mint monochrome)
-    scaled_road_width = _scaled_linewidth(
+    # base linewidth (extent skálázás)
+    base_lw = _scaled_linewidth(
         half_height_m=half_height_m,
         base_linewidth=float(road_width),
         reference_half_height_m=2000.0,
         min_lw=0.20,
         max_lw=4.0,
-    )
+    ) * float(road_boost)
 
     # Letöltési távolság: félátló + tartalék
     dist_m = int(np.ceil((half_width_m**2 + half_height_m**2) ** 0.5)) + 300
@@ -350,7 +364,7 @@ def render_city_map_pretty(
         simplify=True,
     )
 
-    # Pretty-ben is érdemes undirected-re tenni: kevesebb duplázás
+    # kevesebb duplázás
     try:
         G_draw_u = ox.convert.to_undirected(G_draw)
     except AttributeError:
@@ -364,16 +378,26 @@ def render_city_map_pretty(
     )
     gdf_edges_draw_p = gdf_edges_draw_p[~gdf_edges_draw_p.is_empty]
 
-    # Szűrés: nem-jármű utak eltüntetése (footway/cycleway/path/pedestrian/steps)
+    # Szűrés: nem-jármű utak eltüntetése
     if "highway" in gdf_edges_draw_p.columns and not draw_non_vehicular:
         mask = gdf_edges_draw_p["highway"].apply(
             lambda v: not _highway_has_any(v, EXCLUDE_NON_VEHICULAR_HIGHWAYS)
         )
         gdf_edges_draw_p = gdf_edges_draw_p.loc[mask].copy()
 
-        # Ritkább eset: külön "footway" attribútum sidewalk-ként
         if "footway" in gdf_edges_draw_p.columns:
-            gdf_edges_draw_p = gdf_edges_draw_p.loc[gdf_edges_draw_p["footway"].astype(str) != "sidewalk"].copy()
+            gdf_edges_draw_p = gdf_edges_draw_p.loc[
+                gdf_edges_draw_p["footway"].astype(str) != "sidewalk"
+            ].copy()
+
+    # Klasszifikáció
+    if "highway" in gdf_edges_draw_p.columns:
+        gdf_edges_draw_p = gdf_edges_draw_p.copy()
+        gdf_edges_draw_p["highway"] = gdf_edges_draw_p["highway"].apply(_normalize_highway_value)
+        gdf_edges_draw_p["road_class"] = gdf_edges_draw_p["highway"].apply(_classify_road)
+    else:
+        gdf_edges_draw_p = gdf_edges_draw_p.copy()
+        gdf_edges_draw_p["road_class"] = "local"
 
     # --- Water (inland + sea) ---
     inland_water_union = _fetch_water_union(
@@ -423,7 +447,7 @@ def render_city_map_pretty(
                 if len(gdf_bld_p) == 0:
                     gdf_bld_p = None
 
-    # --- Parks / green (egyelőre marad, de bármikor kikapcsolható / átcolorozható) ---
+    # --- Parks / green (egyelőre marad) ---
     tags_parks = {
         "leisure": ["park", "garden", "nature_reserve"],
         "landuse": ["grass", "meadow", "forest", "recreation_ground"],
@@ -449,7 +473,7 @@ def render_city_map_pretty(
                 if len(gdf_parks_p) == 0:
                     gdf_parks_p = None
 
-    # Biztonság: ha van water_union, vegyük ki a víz alól a parkot/épületet
+    # víz alól vegyük ki a parkot/épületet
     if water_union is not None and not water_union.is_empty:
         if gdf_parks_p is not None and len(gdf_parks_p) > 0:
             gdf_parks_p = gdf_parks_p.copy()
@@ -465,13 +489,12 @@ def render_city_map_pretty(
             if len(gdf_bld_p) == 0:
                 gdf_bld_p = None
 
-    # --- Color assignment (NEW) ---
-    background_color = _pick_lightest(palette)  # legvilágosabb mindig a háttér
+    # --- Color assignment ---
+    background_color = _pick_lightest(palette)
     building_palette = _exclude_color(palette, background_color)
     if not building_palette:
-        building_palette = palette[:]  # fallback, ha valamiért 1 elemű palette
+        building_palette = palette[:]
 
-    # park szín: egyelőre backgroundtól eltérő halvány folt
     parks_color = _pick_lightest(building_palette) if building_palette else background_color
 
     # --- Plot ---
@@ -479,7 +502,7 @@ def render_city_map_pretty(
     fig.patch.set_facecolor(style.background)
     ax.set_facecolor(style.background)
 
-    # background land (téglalap)
+    # land background
     gpd.GeoSeries([clip_rect], crs=gdf_edges_draw_p.crs).plot(
         ax=ax,
         color=background_color,
@@ -487,7 +510,7 @@ def render_city_map_pretty(
         zorder=1,
     )
 
-    # parks (alap foltok)
+    # parks
     if gdf_parks_p is not None and len(gdf_parks_p) > 0:
         gdf_parks_p.plot(
             ax=ax,
@@ -497,7 +520,7 @@ def render_city_map_pretty(
             zorder=2,
         )
 
-    # buildings: csak a "erősebb" színekből (background kizárva)
+    # buildings
     if gdf_bld_p is not None and len(gdf_bld_p) > 0:
         building_colors = np.random.choice(building_palette, size=len(gdf_bld_p), replace=True)
         gdf_bld_p.plot(
@@ -508,7 +531,7 @@ def render_city_map_pretty(
             zorder=3,
         )
 
-    # víz (mindig fehér) – a buildings/parks fölé, hogy biztosan kijöjjön
+    # water (white)
     if water_union is not None and not water_union.is_empty:
         gpd.GeoSeries([water_union], crs=gdf_edges_draw_p.crs).plot(
             ax=ax,
@@ -518,17 +541,29 @@ def render_city_map_pretty(
             zorder=4,
         )
 
-    # roads (sötétszürke)
+    # --- Roads: plot by class, thin -> thick (thick on top) ---
     if gdf_edges_draw_p is not None and len(gdf_edges_draw_p) > 0:
-        gdf_edges_draw_p.plot(
-            ax=ax,
-            color=road_color,
-            linewidth=scaled_road_width,
-            alpha=1.0,
-            capstyle="round",
-            joinstyle="round",
-            zorder=10,
-        )
+        # draw order: minor, local, arterial, highway
+        class_order = [
+            ("minor", float(lw_minor_mult), 60),
+            ("local", float(lw_local_mult), 70),
+            ("arterial", float(lw_arterial_mult), 80),
+            ("highway", float(lw_highway_mult), 90),
+        ]
+
+        for cls, mult, z in class_order:
+            grp = gdf_edges_draw_p.loc[gdf_edges_draw_p["road_class"] == cls]
+            if grp is None or len(grp) == 0:
+                continue
+            grp.plot(
+                ax=ax,
+                color=road_color,
+                linewidth=base_lw * mult,
+                alpha=1.0,
+                capstyle="round",
+                joinstyle="round",
+                zorder=z,
+            )
 
     ax.set_xlim(minx, maxx)
     ax.set_ylim(miny, maxy)
