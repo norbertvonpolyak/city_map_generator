@@ -1,220 +1,9 @@
-# from __future__ import annotations
-#
-# from dataclasses import dataclass
-# from datetime import datetime
-# from pathlib import Path
-# from typing import Optional, List
-#
-# import numpy as np
-# import geopandas as gpd
-# import matplotlib.pyplot as plt
-# import osmnx as ox
-# import random
-#
-# from shapely.geometry import Point, box
-# from shapely.ops import unary_union
-#
-# from osmnx._errors import InsufficientResponseError
-#
-# from generator.specs import ProductSpec
-# from generator.styles import Style, DEFAULT_STYLE, get_palette
-#
-#
-# @dataclass(frozen=True)
-# class RenderResult:
-#     output_pdf: Path
-#
-#
-# def _safe_timestamp() -> str:
-#     return datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-#
-#
-# def render_city_map_pretty(
-#     *,
-#     center_lat: float,
-#     center_lon: float,
-#     spec: ProductSpec,
-#     output_dir: Path,
-#     palette_name: str = "warm",
-#     style: Style = DEFAULT_STYLE,
-#     seed: Optional[int] = 42,
-#     filename_prefix: str = "city_pretty",
-#     network_type_draw: str = "drive",
-#     zoom: float = 0.6,
-#     road_width: float = 0.75,
-# ) -> RenderResult:
-#     """
-#     Prettymaps-szerű (réteges) render alap váz:
-#     - ugyanaz a termékméret (spec), ugyanaz a PDF export
-#     - kisebb kiterjedés zoom szorzóval (épület részletekhez)
-#     - jelenleg: háttér + utak (water/sea később)
-#     """
-#     if not (-90.0 <= center_lat <= 90.0):
-#         raise ValueError("center_lat érvénytelen (−90..90).")
-#     if not (-180.0 <= center_lon <= 180.0):
-#         raise ValueError("center_lon érvénytelen (−180..180).")
-#     if zoom <= 0:
-#         raise ValueError("zoom > 0 kell legyen.")
-#
-#     output_dir = Path(output_dir)
-#     output_dir.mkdir(parents=True, exist_ok=True)
-#
-#     if seed is not None:
-#         np.random.seed(seed)
-#         random.seed(seed)
-#
-#     palette: List[str] = get_palette(palette_name)
-#
-#     # Export méret
-#     fig_w_in, fig_h_in = spec.fig_size_inches
-#
-#     # Frame (méterben) – zoomolva
-#     half_width_m, half_height_m = spec.frame_half_sizes_m
-#     half_width_m = float(half_width_m) * float(zoom)
-#     half_height_m = float(half_height_m) * float(zoom)
-#
-#     # Letöltési távolság: félátló + tartalék
-#     dist_m = int(np.ceil((half_width_m**2 + half_height_m**2) ** 0.5)) + 300
-#
-#     # Timestampes fájlnév
-#     ts = _safe_timestamp()
-#     output_pdf = output_dir / f"{filename_prefix}_{spec.width_cm}x{spec.height_cm}cm_z{zoom:.2f}_{ts}.pdf"
-#
-#     # Középpont projekcióban
-#     center = gpd.GeoDataFrame(geometry=[Point(center_lon, center_lat)], crs="EPSG:4326")
-#     center_p = ox.projection.project_gdf(center).geometry.iloc[0]
-#
-#     minx = center_p.x - half_width_m
-#     maxx = center_p.x + half_width_m
-#     miny = center_p.y - half_height_m
-#     maxy = center_p.y + half_height_m
-#     clip_rect = box(minx, miny, maxx, maxy)
-#
-#     # Utak (rajz) – most még csak ennyi
-#     G_draw = ox.graph_from_point(
-#         (center_lat, center_lon),
-#         dist=dist_m,
-#         network_type=network_type_draw,
-#         simplify=True,
-#     )
-#     gdf_edges_draw = ox.graph_to_gdfs(G_draw, nodes=False, edges=True)
-#     gdf_edges_draw_p = ox.projection.project_gdf(gdf_edges_draw)
-#     gdf_edges_draw_p = gpd.clip(
-#         gdf_edges_draw_p,
-#         gpd.GeoSeries([clip_rect], crs=gdf_edges_draw_p.crs),
-#     )
-#
-#     # Buildings (épületek) – polygon layer
-#     tags_buildings = {"building": True}
-#     try:
-#         gdf_bld = ox.features_from_point((center_lat, center_lon), tags=tags_buildings, dist=dist_m)
-#     except InsufficientResponseError:
-#         gdf_bld = None
-#
-#     gdf_bld_p = None
-#     if gdf_bld is not None and len(gdf_bld) > 0:
-#         gdf_bld = gdf_bld[gdf_bld.geometry.notnull()].copy()
-#         if len(gdf_bld) > 0:
-#             gdf_bld_p = ox.projection.project_gdf(gdf_bld)
-#             gdf_bld_p = gdf_bld_p[gdf_bld_p.geom_type.isin(["Polygon", "MultiPolygon"])].copy()
-#             if len(gdf_bld_p) > 0:
-#                 gdf_bld_p = gpd.clip(
-#                     gdf_bld_p,
-#                     gpd.GeoSeries([clip_rect], crs=gdf_bld_p.crs),
-#                 )
-#                 gdf_bld_p = gdf_bld_p[~gdf_bld_p.is_empty]
-#                 if len(gdf_bld_p) == 0:
-#                     gdf_bld_p = None
-#
-#
-#     # Parks / green – polygon layer
-#     tags_parks = {
-#         "leisure": ["park", "garden", "nature_reserve"],
-#         "landuse": ["grass", "meadow", "forest", "recreation_ground"],
-#         "natural": ["wood"],
-#     }
-#     try:
-#         gdf_parks = ox.features_from_point((center_lat, center_lon), tags=tags_parks, dist=dist_m)
-#     except InsufficientResponseError:
-#         gdf_parks = None
-#
-#     gdf_parks_p = None
-#     if gdf_parks is not None and len(gdf_parks) > 0:
-#         gdf_parks = gdf_parks[gdf_parks.geometry.notnull()].copy()
-#         if len(gdf_parks) > 0:
-#             gdf_parks_p = ox.projection.project_gdf(gdf_parks)
-#             gdf_parks_p = gdf_parks_p[gdf_parks_p.geom_type.isin(["Polygon", "MultiPolygon"])].copy()
-#             if len(gdf_parks_p) > 0:
-#                 gdf_parks_p = gpd.clip(
-#                     gdf_parks_p,
-#                     gpd.GeoSeries([clip_rect], crs=gdf_parks_p.crs),
-#                 )
-#                 gdf_parks_p = gdf_parks_p[~gdf_parks_p.is_empty]
-#                 if len(gdf_parks_p) == 0:
-#                     gdf_parks_p = None
-#
-#
-#     # Háttérszín: palette-ből (egységes)
-#     background_color = np.random.choice(palette)
-#
-#     fig, ax = plt.subplots(figsize=(fig_w_in, fig_h_in))
-#     fig.patch.set_facecolor(style.background)
-#     ax.set_facecolor(style.background)
-#
-#     # háttér “land” (egyszerű téglalapként)
-#     gpd.GeoSeries([clip_rect], crs=gdf_edges_draw_p.crs).plot(
-#         ax=ax,
-#         color=background_color,
-#         linewidth=0,
-#     )
-#
-#     # parkok/green: külön színnel, hogy felismerhető legyen a zöldfelület
-#     if gdf_parks_p is not None and len(gdf_parks_p) > 0:
-#         parks_color = np.random.choice(palette)
-#         gdf_parks_p.plot(
-#             ax=ax,
-#             color=parks_color,
-#             linewidth=0,
-#             alpha=1.0,
-#         )
-#
-#
-#     # épületek: kapjanak egy visszafogott, világos tónust (palette-ből), vékony kontúrral
-#     if gdf_bld_p is not None and len(gdf_bld_p) > 0:
-#         building_color = np.random.choice(palette)
-#         gdf_bld_p.plot(
-#             ax=ax,
-#             color=building_color,
-#             linewidth=0.15,
-#             edgecolor=building_color,
-#             alpha=1.0,
-#         )
-#
-#     # utak
-#     if len(gdf_edges_draw_p) > 0:
-#         gdf_edges_draw_p.plot(
-#             ax=ax,
-#             color=style.road,
-#             linewidth=road_width,
-#             alpha=1.0,
-#         )
-#
-#     ax.set_xlim(minx, maxx)
-#     ax.set_ylim(miny, maxy)
-#     ax.set_axis_off()
-#
-#     print("Saving PDF to:", output_pdf)
-#     fig.savefig(output_pdf, format="pdf", dpi=spec.dpi, bbox_inches="tight")
-#     plt.close(fig)
-#
-#     return RenderResult(output_pdf=output_pdf)
-
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Iterable
 
 import numpy as np
 import geopandas as gpd
@@ -234,6 +23,17 @@ from generator.styles import Style, DEFAULT_STYLE, get_palette
 @dataclass(frozen=True)
 class RenderResult:
     output_pdf: Path
+
+
+# --- Non-vehicular highway types that often cause clutter / parallels ---
+EXCLUDE_NON_VEHICULAR_HIGHWAYS: set[str] = {
+    "pedestrian",
+    "cycleway",
+    "footway",
+    "path",
+    "steps",
+    "bridleway",
+}
 
 
 def _safe_timestamp() -> str:
@@ -258,6 +58,20 @@ def _scaled_linewidth(
     scale = reference_half_height_m / float(half_height_m)
     lw = base_linewidth * scale
     return float(max(min_lw, min(lw, max_lw)))
+
+
+def _normalize_highway_value(v):
+    # OSMnx-ben a highway gyakran listás (pl. több tag)
+    return v[0] if isinstance(v, (list, tuple)) and v else v
+
+
+def _highway_has_any(v, banned: set[str]) -> bool:
+    """
+    highway attribútum lehet str vagy lista/tuple. True, ha bármelyik eleme tiltott.
+    """
+    if isinstance(v, (list, tuple, set)):
+        return any(str(x) in banned for x in v)
+    return str(v) in banned
 
 
 def _fetch_water_union(
@@ -423,13 +237,26 @@ def _fetch_sea_polygon(
     return best_poly.intersection(clip_rect)
 
 
-def _pick_distinct_color(palette: List[str], avoid: Optional[str]) -> str:
-    if avoid is None:
-        return str(np.random.choice(palette))
-    choices = [c for c in palette if c != avoid]
-    if not choices:
-        return str(np.random.choice(palette))
-    return str(np.random.choice(choices))
+def _relative_luminance(hex_color: str) -> float:
+    """
+    Approx WCAG-ish relative luminance in [0,1] from #RRGGBB.
+    We only need ordering, not absolute correctness.
+    """
+    s = hex_color.strip().lstrip("#")
+    if len(s) != 6:
+        return 0.0
+    r = int(s[0:2], 16) / 255.0
+    g = int(s[2:4], 16) / 255.0
+    b = int(s[4:6], 16) / 255.0
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def _pick_lightest(palette: List[str]) -> str:
+    return max(palette, key=_relative_luminance)
+
+
+def _exclude_color(palette: List[str], avoid: str) -> List[str]:
+    return [c for c in palette if c != avoid]
 
 
 def render_city_map_pretty(
@@ -442,17 +269,28 @@ def render_city_map_pretty(
     style: Style = DEFAULT_STYLE,
     seed: Optional[int] = 42,
     filename_prefix: str = "city_pretty",
-    network_type_draw: str = "all",   # <-- fontos: így jönnek a kisebb utcák is
+    network_type_draw: str = "all",   # fontos: így jönnek a kisebb utcák is
     zoom: float = 0.6,
-    road_width: float = 0.75,
+
+    # NOTE: defaultot felhúztuk a monochrome-hoz közel, hogy "ugyanolyan" legyen
+    road_width: float = 1.15,
+
     min_building_area: float = 12.0,  # m^2 – nagyon apró building sliverek szűrése
+
+    # NEW: pretty-ben is szűrjük a nem-jármű utakat (mint monochrome)
+    draw_non_vehicular: bool = False,
+
+    # NEW: road color sötétszürke
+    road_color: str = "#555555",
 ) -> RenderResult:
     """
     Prettymaps-szerű (réteges) render:
     - ugyanaz a termékméret (spec), ugyanaz a PDF export
     - zoom: kisebb kiterjedés (épület részletekhez)
-    - rétegek: background/land, parks, buildings, water (white), roads (white), bridges (gray)
+    - rétegek: background/land, parks (opcionális), buildings, water (white), roads (dark gray)
     - víz: belvíz + tenger (coastline), mind fehér
+    - roads: nem-jármű utak (footway/cycleway/path/...) szűrhetők
+    - palette: background = legvilágosabb; buildings = a többi szín random
     """
     if not (-90.0 <= center_lat <= 90.0):
         raise ValueError("center_lat érvénytelen (−90..90).")
@@ -478,13 +316,13 @@ def render_city_map_pretty(
     half_width_m = float(half_width_m) * float(zoom)
     half_height_m = float(half_height_m) * float(zoom)
 
-    # pretty road width skálázás
+    # Road width skálázás (ugyanaz a logika, mint monochrome)
     scaled_road_width = _scaled_linewidth(
         half_height_m=half_height_m,
-        base_linewidth=road_width,
+        base_linewidth=float(road_width),
         reference_half_height_m=2000.0,
-        min_lw=0.18,
-        max_lw=1.2,
+        min_lw=0.20,
+        max_lw=4.0,
     )
 
     # Letöltési távolság: félátló + tartalék
@@ -503,21 +341,39 @@ def render_city_map_pretty(
     miny = center_p.y - half_height_m
     maxy = center_p.y + half_height_m
     clip_rect = box(minx, miny, maxx, maxy)
-    rect_boundary = clip_rect.boundary
 
-    # --- Roads (draw) ---
+    # --- Roads ---
     G_draw = ox.graph_from_point(
         (center_lat, center_lon),
         dist=dist_m,
         network_type=network_type_draw,
         simplify=True,
     )
-    gdf_edges_draw = ox.graph_to_gdfs(G_draw, nodes=False, edges=True)
+
+    # Pretty-ben is érdemes undirected-re tenni: kevesebb duplázás
+    try:
+        G_draw_u = ox.convert.to_undirected(G_draw)
+    except AttributeError:
+        G_draw_u = ox.utils_graph.get_undirected(G_draw)
+
+    gdf_edges_draw = ox.graph_to_gdfs(G_draw_u, nodes=False, edges=True)
     gdf_edges_draw_p = ox.projection.project_gdf(gdf_edges_draw)
     gdf_edges_draw_p = gpd.clip(
         gdf_edges_draw_p,
         gpd.GeoSeries([clip_rect], crs=gdf_edges_draw_p.crs),
     )
+    gdf_edges_draw_p = gdf_edges_draw_p[~gdf_edges_draw_p.is_empty]
+
+    # Szűrés: nem-jármű utak eltüntetése (footway/cycleway/path/pedestrian/steps)
+    if "highway" in gdf_edges_draw_p.columns and not draw_non_vehicular:
+        mask = gdf_edges_draw_p["highway"].apply(
+            lambda v: not _highway_has_any(v, EXCLUDE_NON_VEHICULAR_HIGHWAYS)
+        )
+        gdf_edges_draw_p = gdf_edges_draw_p.loc[mask].copy()
+
+        # Ritkább eset: külön "footway" attribútum sidewalk-ként
+        if "footway" in gdf_edges_draw_p.columns:
+            gdf_edges_draw_p = gdf_edges_draw_p.loc[gdf_edges_draw_p["footway"].astype(str) != "sidewalk"].copy()
 
     # --- Water (inland + sea) ---
     inland_water_union = _fetch_water_union(
@@ -534,9 +390,8 @@ def render_city_map_pretty(
         clip_rect=clip_rect,
     )
 
-    if inland_water_union is None and sea_poly is None:
-        water_union = None
-    else:
+    water_union = None
+    if inland_water_union is not None or sea_poly is not None:
         parts = []
         if inland_water_union is not None:
             parts.append(inland_water_union)
@@ -564,12 +419,11 @@ def render_city_map_pretty(
                 )
                 gdf_bld_p = gdf_bld_p[~gdf_bld_p.is_empty]
                 if len(gdf_bld_p) > 0:
-                    # nagyon apró polygonok szűrése
                     gdf_bld_p = gdf_bld_p[gdf_bld_p.geometry.area > float(min_building_area)]
                 if len(gdf_bld_p) == 0:
                     gdf_bld_p = None
 
-    # --- Parks / green (opcionális, de jól áll pretty módnak) ---
+    # --- Parks / green (egyelőre marad, de bármikor kikapcsolható / átcolorozható) ---
     tags_parks = {
         "leisure": ["park", "garden", "nature_reserve"],
         "landuse": ["grass", "meadow", "forest", "recreation_ground"],
@@ -598,29 +452,27 @@ def render_city_map_pretty(
     # Biztonság: ha van water_union, vegyük ki a víz alól a parkot/épületet
     if water_union is not None and not water_union.is_empty:
         if gdf_parks_p is not None and len(gdf_parks_p) > 0:
+            gdf_parks_p = gdf_parks_p.copy()
             gdf_parks_p["geometry"] = gdf_parks_p.geometry.difference(water_union)
             gdf_parks_p = gdf_parks_p[~gdf_parks_p.is_empty]
             if len(gdf_parks_p) == 0:
                 gdf_parks_p = None
+
         if gdf_bld_p is not None and len(gdf_bld_p) > 0:
+            gdf_bld_p = gdf_bld_p.copy()
             gdf_bld_p["geometry"] = gdf_bld_p.geometry.difference(water_union)
             gdf_bld_p = gdf_bld_p[~gdf_bld_p.is_empty]
             if len(gdf_bld_p) == 0:
                 gdf_bld_p = None
 
-    # --- Color assignment (nem homogén épületek) ---
-    background_color = str(np.random.choice(palette))
-    parks_color = _pick_distinct_color(palette, avoid=background_color)
+    # --- Color assignment (NEW) ---
+    background_color = _pick_lightest(palette)  # legvilágosabb mindig a háttér
+    building_palette = _exclude_color(palette, background_color)
+    if not building_palette:
+        building_palette = palette[:]  # fallback, ha valamiért 1 elemű palette
 
-    # épület-színek: warm -> egyenletes; egyéb -> súlyozott
-    if palette_name == "warm":
-        bld_p = None
-        if gdf_bld_p is not None:
-            bld_p = None  # uniform
-        # nem kell p
-    else:
-        weights = np.array([1.5, 2.0, 3.5, 5.0, 4.5, 3.0, 1.8], dtype=float)
-        bld_p = weights / weights.sum()
+    # park szín: egyelőre backgroundtól eltérő halvány folt
+    parks_color = _pick_lightest(building_palette) if building_palette else background_color
 
     # --- Plot ---
     fig, ax = plt.subplots(figsize=(fig_w_in, fig_h_in))
@@ -632,6 +484,7 @@ def render_city_map_pretty(
         ax=ax,
         color=background_color,
         linewidth=0,
+        zorder=1,
     )
 
     # parks (alap foltok)
@@ -641,20 +494,18 @@ def render_city_map_pretty(
             color=parks_color,
             linewidth=0,
             alpha=1.0,
+            zorder=2,
         )
 
-    # buildings (nem homogén)
+    # buildings: csak a "erősebb" színekből (background kizárva)
     if gdf_bld_p is not None and len(gdf_bld_p) > 0:
-        if palette_name == "warm":
-            building_colors = np.random.choice(palette, size=len(gdf_bld_p), replace=True)
-        else:
-            building_colors = np.random.choice(palette, size=len(gdf_bld_p), replace=True, p=bld_p)
-
+        building_colors = np.random.choice(building_palette, size=len(gdf_bld_p), replace=True)
         gdf_bld_p.plot(
             ax=ax,
             color=building_colors,
-            linewidth=0,      # kontúrt most nem erőltetjük, hogy ne "szőnyeg" legyen
+            linewidth=0,
             alpha=1.0,
+            zorder=3,
         )
 
     # víz (mindig fehér) – a buildings/parks fölé, hogy biztosan kijöjjön
@@ -664,35 +515,20 @@ def render_city_map_pretty(
             color="white",
             edgecolor="white",
             linewidth=0,
+            zorder=4,
         )
 
-    # utak (fehér)
-    if len(gdf_edges_draw_p) > 0:
+    # roads (sötétszürke)
+    if gdf_edges_draw_p is not None and len(gdf_edges_draw_p) > 0:
         gdf_edges_draw_p.plot(
             ax=ax,
-            color=style.road,  # nálad jellemzően fehér
+            color=road_color,
             linewidth=scaled_road_width,
             alpha=1.0,
+            capstyle="round",
+            joinstyle="round",
+            zorder=10,
         )
-
-    # hidak: halványabb (ha van bridge attribútum)
-    if "bridge" in gdf_edges_draw.columns:
-        bridges = gdf_edges_draw[gdf_edges_draw["bridge"].notna()].copy()
-        if len(bridges) > 0:
-            ox.projection.project_gdf(bridges).plot(
-                ax=ax,
-                color=style.bridge,
-                linewidth=max(0.12, scaled_road_width * 0.75),
-                alpha=1.0,
-            )
-
-    # frame border finom fehérrel (opcionális, de szép)
-    gpd.GeoSeries([rect_boundary], crs=gdf_edges_draw_p.crs).plot(
-        ax=ax,
-        color=style.road,
-        linewidth=max(0.12, scaled_road_width * 0.75),
-        alpha=1.0,
-    )
 
     ax.set_xlim(minx, maxx)
     ax.set_ylim(miny, maxy)
