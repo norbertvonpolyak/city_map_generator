@@ -18,6 +18,11 @@ renders/
 cache/
 
 # Fonts
-data/fonts/*.ttf
+# Ignore everything in data
+data/*
+
+# But keep CSV files
+!data/*.csv
+
 
 
