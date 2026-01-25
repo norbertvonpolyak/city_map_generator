@@ -17,3 +17,7 @@ renders/
 .venv/
 cache/
 
+# Fonts
+data/fonts/*.ttf
+
+
