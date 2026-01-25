@@ -1,4 +1,3 @@
-# main.py
 import argparse
 from pathlib import Path
 from generator.specs import spec_from_size_key
@@ -6,7 +5,7 @@ from generator.render import render_city_map
 from generator.render_pretty import render_city_map_pretty
 from generator.render_monochrome import render_city_map_monochrome
 from generator.relief import ReliefConfig
-
+from generator.render_stars import render_star_map_stub
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -15,61 +14,56 @@ def build_parser() -> argparse.ArgumentParser:
     # Mode
     p.add_argument(
         "--mode",
-        choices=["blocks", "pretty", "monochrome"],
-        default="monochrome",
+        choices=["blocks", "pretty", "monochrome", "stars"],
+        default="pretty",
         help="Render mode: blocks / pretty / monochrome",
     )
 
-    # Core inputs
+    # CORE INPUTS
     p.add_argument("--size-key", default="50x50", help="Product size key (e.g. 30x40, 50x50)")
-    p.add_argument("--extent-m", type=int, default=4000, help="Extent in meters (e.g. 2000, 5000)")
+    p.add_argument("--extent-m", type=int, default=2000, help="Extent in meters (e.g. 2000, 5000)")
     p.add_argument("--dpi", type=int, default=300, help="Export DPI")
-    p.add_argument("--center-lat", type=float, default=47.53167540125413, help="Center latitude")
-    p.add_argument("--center-lon", type=float, default=21.62522630640404, help="Center longitude")
+    p.add_argument("--center-lat", type=float, default=52.37025557713184, help="Center latitude")
+    p.add_argument("--center-lon", type=float, default=4.8982369032362545, help="Center longitude")
+    p.add_argument("--output-dir", type=Path, default=Path(r"C:\Users\T470\OneDrive\Asztali gép\WEBSHOP"), help="Output directory")
 
-    p.add_argument(
-        "--output-dir",
-        type=Path,
-        default=Path(r"C:\Users\T470\OneDrive\Asztali gép\WEBSHOP"),
-        help="Output directory",
-    )
+    # ---------------
+    # BLOCKS / PRETTY
+    # ---------------
 
-    # Blocks / pretty
     p.add_argument("--palette", default="warm", help="Palette name (blocks/pretty). Ignored in monochrome.")
     p.add_argument("--seed", type=int, default=42, help="Seed (blocks; also used in monochrome)")
-
-    # Pretty / monochrome shared
     p.add_argument("--zoom", type=float, default=0.6, help="Zoom factor for pretty/monochrome (e.g. 0.6 or 0.4)")
 
-    # Monochrome toggles
+    # ----------
+    # MONOCHROME
+    # ----------
+
+    # toggles
     p.add_argument("--no-relief", action="store_true", help="Disable hillshade relief in monochrome")
     p.add_argument("--dem-dir", type=Path, default=Path("data/dem"), help="DEM GeoTIFF cache directory")
     p.add_argument("--no-buildings", action="store_true", help="Disable buildings in monochrome")
-
-    # Monochrome controls (your requested “from main I can tweak it” knobs)
+    # controls
     p.add_argument("--mono-road-width", type=float, default=1.15, help="Monochrome base road width")
     p.add_argument("--mono-road-boost", type=float, default=1.0, help="Extra multiplier for all monochrome roads")
-    p.add_argument(
-        "--mono-parallel-tol-m",
-        type=float,
-        default=7.0,
-        help="Collapse parallel roads: distance tolerance in meters (bigger = more aggressive)",
-    )
-    p.add_argument(
-        "--mono-parallel-angle-deg",
-        type=float,
-        default=12.0,
-        help="Collapse parallel roads: angle tolerance in degrees (bigger = more aggressive)",
-    )
+    p.add_argument("--mono-parallel-tol-m", type=float, default=7.0, help="Collapse parallel roads: distance tolerance in meters (bigger = more aggressive)")
+    p.add_argument("--mono-parallel-angle-deg",type=float, default=12.0, help="Collapse parallel roads: angle tolerance in degrees (bigger = more aggressive)")
     p.add_argument("--mono-min-building-area", type=float, default=12.0, help="Min building area (m^2-ish in proj CRS)")
+    # switch network detail in monochrome
+    p.add_argument("--mono-network", default="all", choices=["all", "all_private", "drive", "drive_service", "walk", "bike"], help="OSMnx network_type for monochrome roads")
+    p.add_argument("--stars-cutoff-mag", type=float, default=5.8, help="Magnitude cutoff for stars (higher = denser). Typical: 5.0-6.0")
+    p.add_argument("--stars-glow", action="store_true", default=True, help="Enable simple halo/glow effect for bright stars")
 
-    # Optional: switch network detail in monochrome
-    p.add_argument(
-        "--mono-network",
-        default="all",
-        choices=["all", "all_private", "drive", "drive_service", "walk", "bike"],
-        help="OSMnx network_type for monochrome roads",
-    )
+    # -------
+    # STARMAP
+    # -------
+
+    p.add_argument("--stars-title", type=str, default="Tamara & Norbert")
+    p.add_argument("--stars-motto", type=str, default="THE NIGHT OUR LOVE WAS BORN")
+    p.add_argument("--stars-location", type=str, default="KIRÁLYRÉT")
+    p.add_argument("--stars-date", type=str, default="MAY 8, 2022")
+    p.add_argument("--stars-lat", type=float, default=47.894722)
+    p.add_argument("--stars-lon", type=float, default=18.977778)
 
     return p
 
@@ -107,6 +101,27 @@ def main() -> None:
         )
         print("Pretty output:", result.output_pdf)
         return
+
+    if args.mode == "stars":
+        result = render_star_map_stub(
+            spec=spec,
+            output_dir=args.output_dir,
+            seed=args.seed,
+            filename_prefix="star_map",
+            cutoff_mag=args.stars_cutoff_mag,
+            enable_glow=args.stars_glow,
+            title=args.stars_title,
+            motto=args.stars_motto,
+            location_name=args.stars_location,
+            date_text=args.stars_date,
+            lat=args.stars_lat,
+            lon=args.stars_lon,
+        )
+
+        print("Stars output:", result.output_pdf)
+        print("Stars preview:", result.output_preview_png)
+        return
+
 
     # Monochrome
     relief_cfg = ReliefConfig(
