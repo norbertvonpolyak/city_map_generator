@@ -1,26 +1,55 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 from math import gcd
-from typing import Tuple
+from typing import Tuple, List
+
 
 # --- webshop termékméretek (cm) ---
+# FONTOS: itt minden termékvonal közös "univerzális" listája lehet,
+# a termékvonal-specifikus szűrést a get_allowed_size_keys() csinálja.
 SIZES_CM = {
     "21x30": (21, 30),
-    "30x21": (31, 21),
+
+    # landscape variánsok (CITYMAP-hoz maradhatnak)
+    "30x21": (30, 21),
+
     "30x40": (30, 40),
     "40x30": (40, 30),
+
     "40x50": (40, 50),
-    "50x40": (40, 50),
+    "50x40": (50, 40),  # <-- FIX: eddig hibásan 40x50 volt
+
     "50x70": (50, 70),
     "70x50": (70, 50),
+
     "61x91": (61, 91),
     "91x61": (91, 61),
+
     "32x32": (32, 32),
     "50x50": (50, 50),
 }
 
 DEFAULT_EXTENT_M = 5000  # félmagasság méterben (default)
+
+
+class ProductLine(str, Enum):
+    CITYMAP = "citymap"
+    STARMAP = "starmap"
+
+
+def get_allowed_size_keys(product_line: ProductLine) -> List[str]:
+    """
+    Termékvonal-specifikus méretkínálat.
+
+    DÖNTÉSEID:
+    - STARMAP: csak álló méretek (21x30, 30x40, 40x50) + speciális 50x50
+    - CITYMAP: nem érinti, maradhat a teljes választék
+    """
+    if product_line == ProductLine.STARMAP:
+        return ["21x30", "30x40", "40x50", "50x50"]
+    return list(SIZES_CM.keys())
 
 
 @dataclass(frozen=True)
@@ -32,21 +61,15 @@ class ProductSpec:
 
     @property
     def aspect_ratio(self) -> Tuple[int, int]:
-        """Egyszerűsített képarány (w:h)."""
         g = gcd(self.width_cm, self.height_cm)
         return (self.width_cm // g, self.height_cm // g)
 
     @property
     def fig_size_inches(self) -> Tuple[float, float]:
-        """Export fizikai mérete inch-ben (PDF/PNG méretezéshez)."""
         return (self.width_cm / 2.54, self.height_cm / 2.54)
 
     @property
     def frame_half_sizes_m(self) -> Tuple[float, float]:
-        """
-        (half_width_m, half_height_m) méterben.
-        extent_m = félmagasság.
-        """
         ar_w, ar_h = self.aspect_ratio
         half_h = float(self.extent_m)
         half_w = half_h * (ar_w / ar_h)

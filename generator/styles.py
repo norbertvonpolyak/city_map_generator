@@ -30,111 +30,123 @@ DEFAULT_STYLE = Style(
 # FONTOS: világostól sötét felé rendezve
 
 PALETTES: Dict[str, List[str]] = {
-    "warm":             ["#e28c41","#cd6d40","#e7b573","#e39f55","#9dc6b4","#6f6b5e","#e2bf98"],
-    "vivid_city":       ["#FFFD82","#969765","#1B998B","#246569","#FF9B71","#E84855","#2D3047"],
-    "amber_dusk":       ["#EBC775","#FFA630","#9CB48F","#6D9790","#3E7990","#2E5077","#483656"],
-    "sunset_noir":      ["#FFBA49","#A4A9AD","#887F7D","#20A39E","#EF5B5B","#892E3D","#23001E"],
-    "coastal_modern":   ["#EDE6E3","#DADAD9","#EFA596","#5BC3EB","#497E8D","#F06449","#36382E"],
-    "urban_gold":       ["#DFD5BB","#D9C590","#D3B566","#CCA43B","#786A3E","#534F3D","#2D333B"],
+    "warm":             ["#e28c41","#cd6d40","#e7b573","#e39f55","#c86a3d","#b55a3a","#9b4d37"],
+    "cool":             ["#c5d5e6","#a7bfd8","#89aacb","#6b94bd","#4f7eaf","#386a98","#24537a"],
+    "grayscale":        ["#f2f2f2","#d9d9d9","#bfbfbf","#a6a6a6","#8c8c8c","#737373","#595959"],
+    "green":            ["#d7e9d2","#b7d8b0","#95c78d","#74b66a","#4f9a47","#3f7d39","#2f5f2b"],
+    "sunset":           ["#ffd6a5","#ffb38a","#ff8f6e","#ff6b6b","#d65a7a","#9b4d7f","#5c3c69"],
 }
 
-def get_palette(name: str) -> List[str]:
-    try:
-        return PALETTES[name]
-    except KeyError as e:
-        raise ValueError(
-            f"Ismeretlen paletta: {name}. "
-            f"Választható: {list(PALETTES.keys())}"
-        ) from e
-
 
 # =============================================================================
-# MONOCHROME STYLE (PRETTY RENDER – SOURCE OF TRUTH)
+# MONO STYLE (render_monochrome)
 # =============================================================================
 
-@dataclass
+@dataclass(frozen=True)
 class MonoStyle:
-    # -------------------------------------------------------------------------
-    # background / base
-    # -------------------------------------------------------------------------
-    background: str = "#f7f7f7"
+    # általános
+    background_rgb: tuple[float, float, float] = (1.0, 1.0, 1.0)
+    ink_rgb: tuple[float, float, float] = (0.1, 0.1, 0.1)
 
-    # -------------------------------------------------------------------------
-    # landuse / parks
-    # -------------------------------------------------------------------------
-    land_fill: str = "#ffffff"
-    park_fill: str = "#ededed"
-    industrial_fill: str = "#e2e2e2"
+    # vonalak
+    road_alpha: float = 0.85
+    bridge_alpha: float = 0.55
+    water_alpha: float = 0.0
 
-    # -------------------------------------------------------------------------
-    # water (MINDEN víz fehér – river / lake / sea)
-    # -------------------------------------------------------------------------
-    water_fill: str = "#ffffff"
-    water_edge: str = "#000000"
+    # kitöltések
+    land_alpha: float = 0.0
 
-    # -------------------------------------------------------------------------
-    # buildings
-    # -------------------------------------------------------------------------
-    buildings_fill: str = "#dcdcdc"
-
-    # -------------------------------------------------------------------------
-    # rail
-    # -------------------------------------------------------------------------
-    rail_color: str = "#9a9a9a"
-
-    # -------------------------------------------------------------------------
-    # roads (two-pass drawing)
-    # -------------------------------------------------------------------------
-    highway_fill: str = "#111111"
-    highway_stroke: str = "#9c9c9c"
-
-    arterial_fill: str = "#111111"
-    arterial_stroke: str = "#9c9c9c"
-
-    local_fill: str = "#111111"
-    local_stroke: str = "#9c9c9c"
-
-    minor_fill: str = "#111111"
-    minor_stroke: str = "#9c9c9c"
-
-    # -------------------------------------------------------------------------
-    # road drawing behavior
-    # -------------------------------------------------------------------------
-    stroke_mult: float = 1.45
-
-    highway_stroke_enabled: bool = False
-    arterial_stroke_enabled: bool = False
-    local_stroke_enabled: bool = True
-    minor_stroke_enabled: bool = True
-
-    # -------------------------------------------------------------------------
-    # linewidth master controls
-    # -------------------------------------------------------------------------
-    road_width: float = 1.25
-    road_boost: float = 1.0
-
-    # -------------------------------------------------------------------------
-    # class-specific multipliers
-    # -------------------------------------------------------------------------
-    lw_highway_mult: float = 3.10
-    lw_arterial_mult: float = 2.25
-    lw_local_mult: float = 1.35
-    lw_minor_mult: float = 0.95
-
-    # -------------------------------------------------------------------------
-    # helpers
-    # -------------------------------------------------------------------------
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
 
+DEFAULT_MONO_STYLE = MonoStyle()
+
+
 # =============================================================================
-# DEFAULT INSTANCE (használat: style = DEFAULT_MONO)
+# STARMAP STYLE (render_stars)
 # =============================================================================
 
-DEFAULT_MONO = MonoStyle()
+@dataclass(frozen=True)
+class StarMapStyle:
+    # page / paper
+    page_rgb: tuple[float, float, float] = (1.0, 1.0, 1.0)   # fehér lap
 
-MONO_PRESETS = {
-    "default": DEFAULT_MONO,
-    "snazzy_bw_blackwater": DEFAULT_MONO,  # alias a régi névre
-}
+    # sky (map area)
+    sky_rgb: tuple[float, float, float] = (0.0, 0.0, 0.0)    # fekete ég
+    star_rgb: tuple[float, float, float] = (1.0, 1.0, 1.0)   # fehér csillag
+
+    # typography
+    text_rgb: tuple[float, float, float] = (0.0, 0.0, 0.0)   # fekete szöveg
+
+    # milky way fog
+    mw_fog_rgb: tuple[float, float, float] = (1.0, 1.0, 1.0)
+    mw_fog_alpha: float = 0.05
+
+    # glow
+    glow_rgb: tuple[float, float, float] = (1.0, 1.0, 1.0)
+    glow_alpha_1: float = 0.10
+    glow_alpha_2: float = 0.06
+
+    # circle outline
+    circle_stroke_rgb: tuple[float, float, float] = (0.70, 0.70, 0.70)
+    circle_stroke_alpha: float = 0.65
+    circle_stroke_width: float = 0.8
+
+    # subtle drop shadow around circle (VERY gentle)
+    shadow_dx_pt: float = 1.8
+    shadow_dy_pt: float = -1.8
+    shadow_alpha_max: float = 0.10
+    shadow_steps: int = 4
+    shadow_spread_pt: float = 3.0
+
+    # layout tuning
+    portrait_side_clear_frac: float = 0.07
+    portrait_radius_scale: float = 0.90
+    portrait_min_gap_frac: float = 0.055
+
+    # typography BASE sizes (30x40 baseline; renderben dinamikusan skálázunk)
+    portrait_title_size: float = 99.0
+    portrait_motto_size: float = 26.0
+    portrait_line2_size: float = 16.5
+    portrait_line3_size: float = 15.75
+    portrait_track1: float = 2.0
+    portrait_track2: float = 1.68
+    portrait_track3: float = 1.44
+
+    # square 50x50 band
+    square50_band_height_frac: float = 0.12   # <-- vékonyabb (kb fele vagy kevesebb)
+    square50_band_fill_rgb: tuple[float, float, float] = (1.0, 1.0, 1.0)
+    square50_band_alpha: float = 0.50         # <-- 50% áttetsző
+    square50_text_rgb: tuple[float, float, float] = (0.0, 0.0, 0.0)
+
+    square50_track1: float = 1.9
+    square50_track2: float = 1.6
+    square50_track3: float = 1.35
+
+    # densities
+    portrait_bg_count: int = 2600
+    square50_bg_count: int = 3200
+
+    # milky way band model
+    band_sigma: float = 0.18
+    band_strength_portrait: float = 0.70
+    band_strength_square50: float = 0.75
+
+    # star visibility
+    star_min_radius_pt: float = 1.15  # biztosan látszik preview-ban is
+
+    # procedural dust (fine star texture)
+    dust_count_portrait: int = 1400
+    dust_count_square50: int = 2200
+    dust_min_size_pt: float = 1.05
+    dust_max_size_pt: float = 1.45
+    dust_band_bias: float = 0.55
+    dust_alpha: float = 0.28
+    dust_use_circles: bool = True
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
+DEFAULT_STARMAP_STYLE = StarMapStyle()

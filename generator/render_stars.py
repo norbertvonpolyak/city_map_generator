@@ -12,12 +12,18 @@ from reportlab.pdfbase.ttfonts import TTFont
 
 import fitz  # PyMuPDF
 
+from generator.styles import DEFAULT_STARMAP_STYLE
+
 
 @dataclass(frozen=True)
 class StarsRenderResult:
     output_pdf: Path
     output_preview_png: Path
 
+
+# =============================================================================
+# IO / Preview
+# =============================================================================
 
 def _pdf_to_preview_png(pdf_path: Path, png_path: Path, dpi: int = 350) -> None:
     doc = fitz.open(str(pdf_path))
@@ -47,21 +53,179 @@ def _load_star_catalog_csv(csv_path: Path):
     return stars
 
 
+# =============================================================================
+# Helpers
+# =============================================================================
+
+def _safe_set_alpha(c, fill: float | None = None, stroke: float | None = None) -> None:
+    if fill is not None:
+        try:
+            c.setFillAlpha(fill)
+        except Exception:
+            pass
+    if stroke is not None:
+        try:
+            c.setStrokeAlpha(stroke)
+        except Exception:
+            pass
+
+
+def _paint_page_white(c, w_pt: float, h_pt: float) -> None:
+    st = DEFAULT_STARMAP_STYLE
+    c.saveState()
+    _safe_set_alpha(c, fill=1.0, stroke=1.0)
+    c.setFillColorRGB(*st.page_rgb)
+    c.setStrokeColorRGB(*st.page_rgb)
+    c.rect(0, 0, w_pt, h_pt, stroke=0, fill=1)
+    c.restoreState()
+
+
+def _clip_to_circle(c, cx: float, cy: float, r: float) -> None:
+    p = c.beginPath()
+    p.circle(cx, cy, r)
+    c.clipPath(p, stroke=0, fill=0)
+
+
 def _inside_unit_disk(x: float, y: float) -> bool:
     return (x * x + y * y) <= 1.0
 
 
 def _mag_to_radius_pt(mag: float, twinkle: float) -> float:
+    """
+    Halvány csillagok láthatóság:
+    - enyhe gamma (t**0.45)
+    - baseline emelve
+    - minimum sugár a styles-ból
+    """
+    st = DEFAULT_STARMAP_STYLE
+
     mag = max(-1.5, min(6.0, mag))
     b = 10 ** (-0.4 * mag)
     b_min = 10 ** (-0.4 * 6.0)
     b_max = 10 ** (-0.4 * (-1.5))
     t = (b - b_min) / (b_max - b_min)
-    t = t ** 0.55
-    return (0.55 + t * 2.6) * twinkle
+    t = max(0.0, min(1.0, t))
+
+    t = t ** 0.45
+    r = (1.05 + t * 3.10) * twinkle
+    return max(st.star_min_radius_pt, r)
 
 
-def _draw_centered_tracked(c, text: str, cx: float, y: float, font_name: str, font_size: float, tracking_pt: float):
+def draw_fog_dot(c, x: float, y: float, r: float) -> None:
+    st = DEFAULT_STARMAP_STYLE
+    c.saveState()
+    c.setFillColorRGB(*st.mw_fog_rgb)
+    _safe_set_alpha(c, fill=st.mw_fog_alpha)
+    c.circle(x, y, r, stroke=0, fill=1)
+    c.restoreState()
+
+
+def draw_star_glow(c, x: float, y: float, r: float, rng: random.Random) -> None:
+    st = DEFAULT_STARMAP_STYLE
+    r1 = r * (2.2 + 0.4 * rng.random())
+    r2 = r * (1.6 + 0.2 * rng.random())
+
+    c.saveState()
+    c.setFillColorRGB(*st.glow_rgb)
+    _safe_set_alpha(c, fill=st.glow_alpha_1)
+    c.circle(x, y, r1, stroke=0, fill=1)
+    _safe_set_alpha(c, fill=st.glow_alpha_2)
+    c.circle(x, y, r2, stroke=0, fill=1)
+    c.restoreState()
+
+
+def draw_star_core(c, x: float, y: float, r: float) -> None:
+    """
+    Core: alpha nélkül.
+    A nagyon kicsiket négyzettel rajzoljuk, hogy biztosan látszódjanak raster preview-ban is.
+    """
+    st = DEFAULT_STARMAP_STYLE
+    c.saveState()
+    _safe_set_alpha(c, fill=1.0, stroke=1.0)
+    c.setFillColorRGB(*st.star_rgb)
+
+    if r < 1.10:
+        s = max(1.25, r * 1.70)
+        c.rect(x - s / 2.0, y - s / 2.0, s, s, stroke=0, fill=1)
+    else:
+        c.circle(x, y, r, stroke=0, fill=1)
+
+    c.restoreState()
+
+
+def draw_star_dust(
+    *,
+    c,
+    rng: random.Random,
+    count: int,
+    x0: float,
+    y0: float,
+    x1: float,
+    y1: float,
+    band_angle: float,
+) -> None:
+    """
+    Procedurális "dust": kerek, kevésbé fényes pontok.
+    """
+    st = DEFAULT_STARMAP_STYLE
+
+    cx = (x0 + x1) / 2.0
+    cy = (y0 + y1) / 2.0
+    hw = (x1 - x0) / 2.0
+    hh = (y1 - y0) / 2.0
+
+    def to_unit(px: float, py: float) -> tuple[float, float]:
+        return (px - cx) / hw, (py - cy) / hh
+
+    c.saveState()
+    c.setFillColorRGB(*st.star_rgb)
+    _safe_set_alpha(c, fill=st.dust_alpha, stroke=1.0)
+
+    for _ in range(count):
+        while True:
+            x = rng.uniform(x0, x1)
+            y = rng.uniform(y0, y1)
+            xu, yu = to_unit(x, y)
+            d = abs(xu * math.sin(band_angle) - yu * math.cos(band_angle))
+            p_band = math.exp(-(d / st.band_sigma) ** 2)
+            if rng.random() < ((1.0 - st.dust_band_bias) + st.dust_band_bias * p_band):
+                break
+
+        s = rng.uniform(st.dust_min_size_pt, st.dust_max_size_pt)
+        r = s * 0.55
+        c.circle(x, y, r, stroke=0, fill=1)
+
+    c.restoreState()
+
+
+def draw_circle_shadow(c, cx: float, cy: float, r: float) -> None:
+    """
+    Very subtle fake "blurred" drop shadow with a few soft circles.
+    """
+    st = DEFAULT_STARMAP_STYLE
+    steps = max(1, int(st.shadow_steps))
+
+    c.saveState()
+    c.setFillColorRGB(0.0, 0.0, 0.0)
+
+    for i in range(steps):
+        t = i / max(1, (steps - 1))
+        alpha = st.shadow_alpha_max * (1.0 - t) * 0.65
+        spread = st.shadow_spread_pt * (0.35 + 0.65 * t)
+
+        _safe_set_alpha(c, fill=alpha)
+        c.circle(
+            cx + st.shadow_dx_pt,
+            cy + st.shadow_dy_pt,
+            r + spread,
+            stroke=0,
+            fill=1,
+        )
+
+    c.restoreState()
+
+
+def _draw_centered_tracked(c, text: str, cx: float, y: float, font_name: str, font_size: float, tracking_pt: float) -> None:
     text = text or ""
     w = 0.0
     for ch in text:
@@ -110,6 +274,271 @@ def _register_fonts(project_root: Path) -> dict:
     return fonts
 
 
+def _portrait_type_scale(h_pt: float) -> float:
+    """
+    Tipó skála: 30x40 a baseline.
+    Így a 21x30 automatikusan kisebb lesz, és az arány helyreáll.
+    """
+    base_h_pt_30x40 = (40.0 / 2.54) * 72.0
+    s = h_pt / base_h_pt_30x40
+    # stabil clamp (a jelenlegi starmap méreteknél bőven elég)
+    return max(0.72, min(1.08, s))
+
+
+# =============================================================================
+# Layouts
+# =============================================================================
+
+def _render_portrait_circle(
+    *,
+    c,
+    w_pt: float,
+    h_pt: float,
+    rng: random.Random,
+    fonts: dict,
+    stars: list,
+    cutoff_mag: float,
+    enable_glow: bool,
+    title: str,
+    motto: str,
+    location_name: str,
+    date_text: str,
+    lat: float,
+    lon: float,
+) -> None:
+    st = DEFAULT_STARMAP_STYLE
+
+    _paint_page_white(c, w_pt, h_pt)
+
+    side_clear = min(w_pt, h_pt) * st.portrait_side_clear_frac
+    max_diameter = (w_pt - 2 * side_clear)
+    radius = (max_diameter / 2.0) * st.portrait_radius_scale
+
+    cx = w_pt / 2.0
+    cy = h_pt - side_clear - radius
+
+    # subtle shadow behind circle (on white page)
+    draw_circle_shadow(c, cx, cy, radius)
+
+    # sky in circle
+    c.saveState()
+    _clip_to_circle(c, cx, cy, radius)
+    c.setFillColorRGB(*st.sky_rgb)
+    c.rect(0, 0, w_pt, h_pt, stroke=0, fill=1)
+    c.restoreState()
+
+    # circle outline
+    c.saveState()
+    c.setLineWidth(st.circle_stroke_width)
+    c.setStrokeColorRGB(*st.circle_stroke_rgb)
+    _safe_set_alpha(c, stroke=st.circle_stroke_alpha)
+    c.circle(cx, cy, radius, stroke=1, fill=0)
+    c.restoreState()
+
+    # fog + dust + catalog stars inside clip
+    c.saveState()
+    _clip_to_circle(c, cx, cy, radius)
+
+    band_angle = rng.random() * math.pi
+
+    # milky way fog
+    for _ in range(st.portrait_bg_count):
+        while True:
+            xu = rng.uniform(-1.0, 1.0)
+            yu = rng.uniform(-1.0, 1.0)
+            if _inside_unit_disk(xu, yu):
+                break
+        x = cx + xu * radius
+        y = cy + yu * radius
+        r = 0.35 + 0.55 * rng.random()
+        draw_fog_dot(c, x, y, r)
+
+    # dust texture
+    draw_star_dust(
+        c=c,
+        rng=rng,
+        count=st.dust_count_portrait,
+        x0=cx - radius,
+        y0=cy - radius,
+        x1=cx + radius,
+        y1=cy + radius,
+        band_angle=band_angle,
+    )
+
+    # catalog stars
+    for s in stars:
+        mag = s["mag"]
+        if mag > cutoff_mag:
+            continue
+
+        xu = ((s["ra_deg"] % 360.0) / 180.0) - 1.0
+        yu = max(-90.0, min(90.0, s["dec_deg"])) / 90.0
+        if not _inside_unit_disk(xu, yu):
+            continue
+
+        x = cx + xu * radius
+        y = cy + yu * radius
+
+        tw = 0.85 + 0.35 * rng.random()
+        sr = _mag_to_radius_pt(mag, tw)
+        if enable_glow and mag <= 0.8:
+            draw_star_glow(c, x, y, sr, rng)
+        draw_star_core(c, x, y, sr)
+
+    c.restoreState()
+
+    # typography on white (dynamic scaling)
+    s = _portrait_type_scale(h_pt)
+
+    TITLE_SIZE = st.portrait_title_size * s
+    MOTTO_SIZE = st.portrait_motto_size * s
+    LINE2_SIZE = st.portrait_line2_size * s
+    LINE3_SIZE = st.portrait_line3_size * s
+
+    TRACK1 = st.portrait_track1 * s
+    TRACK2 = st.portrait_track2 * s
+    TRACK3 = st.portrait_track3 * s
+
+    bottom_margin = side_clear * 1.45
+    y3 = bottom_margin
+    y2 = y3 + (LINE3_SIZE * 1.30)
+    y1 = y2 + (LINE2_SIZE * 2.30)
+    y_title = y1 + (MOTTO_SIZE * 2.30)
+
+    circle_bottom = cy - radius
+    min_gap = min(w_pt, h_pt) * st.portrait_min_gap_frac
+    if y_title + (TITLE_SIZE * 0.2) > (circle_bottom - min_gap):
+        shift = (y_title + (TITLE_SIZE * 0.2)) - (circle_bottom - min_gap)
+        y_title -= shift
+        y1 -= shift
+        y2 -= shift
+        y3 -= shift
+
+    c.setFillColorRGB(*st.text_rgb)
+
+    title_text = (title or "").strip()
+    c.setFont(fonts["title"], TITLE_SIZE)
+    tw = pdfmetrics.stringWidth(title_text, fonts["title"], TITLE_SIZE)
+    c.drawString(cx - tw / 2.0, y_title, title_text)
+
+    _draw_centered_tracked(c, (motto or "").upper(), cx, y1, fonts["meta"], MOTTO_SIZE, TRACK1)
+    loc_date = f"{(location_name or '').upper()}  |  {(date_text or '').upper()}"
+    _draw_centered_tracked(c, loc_date, cx, y2, fonts["meta"], LINE2_SIZE, TRACK2)
+    coord = f"{lat:.6f}°N, {lon:.6f}°E"
+    _draw_centered_tracked(c, coord, cx, y3, fonts["meta"], LINE3_SIZE, TRACK3)
+
+
+def _render_square50_banded(
+    *,
+    c,
+    w_pt: float,
+    h_pt: float,
+    rng: random.Random,
+    fonts: dict,
+    stars: list,
+    cutoff_mag: float,
+    enable_glow: bool,
+    title: str,
+    motto: str,
+    location_name: str,
+    date_text: str,
+    lat: float,
+    lon: float,
+) -> None:
+    st = DEFAULT_STARMAP_STYLE
+
+    _paint_page_white(c, w_pt, h_pt)
+
+    band_h = h_pt * st.square50_band_height_frac
+
+    # IMPORTANT: sky covers FULL height (so the band is true overlay)
+    c.saveState()
+    c.setFillColorRGB(*st.sky_rgb)
+    c.rect(0, 0, w_pt, h_pt, stroke=0, fill=1)
+    c.restoreState()
+
+    band_angle = rng.random() * math.pi
+
+    # fog across full page
+    for _ in range(st.square50_bg_count):
+        x = rng.uniform(0.0, w_pt)
+        y = rng.uniform(0.0, h_pt)
+        r = 0.35 + 0.55 * rng.random()
+        draw_fog_dot(c, x, y, r)
+
+    # dust across full page
+    draw_star_dust(
+        c=c,
+        rng=rng,
+        count=st.dust_count_square50,
+        x0=0.0,
+        y0=0.0,
+        x1=w_pt,
+        y1=h_pt,
+        band_angle=band_angle,
+    )
+
+    # catalog stars across full page
+    for s in stars:
+        mag = s["mag"]
+        if mag > cutoff_mag:
+            continue
+
+        xu = ((s["ra_deg"] % 360.0) / 180.0) - 1.0
+        yu = max(-90.0, min(90.0, s["dec_deg"])) / 90.0
+
+        x = (w_pt / 2.0) + xu * (w_pt / 2.0)
+        y = (h_pt / 2.0) + yu * (h_pt / 2.0)
+
+        tw = 0.85 + 0.35 * rng.random()
+        sr = _mag_to_radius_pt(mag, tw)
+        if enable_glow and mag <= 0.8:
+            draw_star_glow(c, x, y, sr, rng)
+        draw_star_core(c, x, y, sr)
+
+    # bottom band overlay: thin + 50% translucent
+    c.saveState()
+    c.setFillColorRGB(*st.square50_band_fill_rgb)
+    _safe_set_alpha(c, fill=st.square50_band_alpha)
+    c.rect(0, 0, w_pt, band_h, stroke=0, fill=1)
+    c.restoreState()
+
+    # typography on band (black)
+    c.setFillColorRGB(*st.square50_text_rgb)
+    cx = w_pt / 2.0
+    pad = max(14.0, band_h * 0.12)
+    band_top = band_h
+
+    TITLE_SIZE = max(28.0, min(56.0, band_h * 0.36))
+    MOTTO_SIZE = max(10.0, min(20.0, band_h * 0.12))
+    LINE2_SIZE = max(9.0, min(16.0, band_h * 0.10))
+    LINE3_SIZE = max(8.0, min(14.0, band_h * 0.09))
+
+    TRACK1 = st.square50_track1
+    TRACK2 = st.square50_track2
+    TRACK3 = st.square50_track3
+
+    y_title = band_top - pad - TITLE_SIZE
+    y1 = y_title - (MOTTO_SIZE * 1.55)
+    y2 = y1 - (LINE2_SIZE * 1.35)
+    y3 = y2 - (LINE3_SIZE * 1.25)
+
+    title_text = (title or "").strip()
+    c.setFont(fonts["title"], TITLE_SIZE)
+    tw = pdfmetrics.stringWidth(title_text, fonts["title"], TITLE_SIZE)
+    c.drawString(cx - tw / 2.0, y_title, title_text)
+
+    _draw_centered_tracked(c, (motto or "").upper(), cx, y1, fonts["meta"], MOTTO_SIZE, TRACK1)
+    loc_date = f"{(location_name or '').upper()}  |  {(date_text or '').upper()}"
+    _draw_centered_tracked(c, loc_date, cx, y2, fonts["meta"], LINE2_SIZE, TRACK2)
+    coord = f"{lat:.6f}°N, {lon:.6f}°E"
+    _draw_centered_tracked(c, coord, cx, y3, fonts["meta"], LINE3_SIZE, TRACK3)
+
+
+# =============================================================================
+# Public entry
+# =============================================================================
+
 def render_star_map_stub(
     spec,
     output_dir: Path,
@@ -125,7 +554,6 @@ def render_star_map_stub(
     lat: float = 47.894722,
     lon: float = 18.977778,
 ) -> StarsRenderResult:
-
     output_dir.mkdir(parents=True, exist_ok=True)
 
     w_in, h_in = spec.fig_size_inches
@@ -140,144 +568,48 @@ def render_star_map_stub(
     project_root = Path(__file__).resolve().parents[1]
     fonts = _register_fonts(project_root)
 
-    # ============================================================
-    # CIRCLE LAYOUT (fix): top gap == side gap (circle fully visible)
-    # ============================================================
-    side_clear = min(w_pt, h_pt) * 0.07
-
-    # Circle diameter from width constraint (side margins), then 90% scale
-    max_diameter = (w_pt - 2 * side_clear)
-    radius = (max_diameter / 2.0) * 0.9
-
-    cx = w_pt / 2.0
-    # Top of circle is side_clear => cy = h - side_clear - radius
-    cy = h_pt - side_clear - radius
-
-    # Circle outline
-    c.setLineWidth(0.8)
-    c.setStrokeColorRGB(0.75, 0.75, 0.75)
-    c.circle(cx, cy, radius, stroke=1, fill=0)
-
-    # Load stars
     catalog_path = project_root / "data" / "stars_sample.csv"
     stars = _load_star_catalog_csv(catalog_path) if catalog_path.exists() else []
 
-    # Background (Milky Way band)
-    c.setFillColorRGB(0.35, 0.35, 0.35)
-    c.setStrokeColorRGB(0.35, 0.35, 0.35)
+    is_square_50 = (getattr(spec, "width_cm", None) == 50 and getattr(spec, "height_cm", None) == 50)
 
-    bg_count = 2000
-    band_angle = rng.random() * math.pi
-    band_sigma = 0.18
-    band_strength = 0.65
-
-    for _ in range(bg_count):
-        while True:
-            xu = rng.uniform(-1.0, 1.0)
-            yu = rng.uniform(-1.0, 1.0)
-            if not _inside_unit_disk(xu, yu):
-                continue
-
-            d = abs(xu * math.sin(band_angle) - yu * math.cos(band_angle))
-            p_band = math.exp(-(d / band_sigma) ** 2)
-            p_accept = (1.0 - band_strength) + band_strength * p_band
-            if rng.random() < p_accept:
-                break
-
-        x = cx + xu * radius
-        y = cy + yu * radius
-
-        d = abs(xu * math.sin(band_angle) - yu * math.cos(band_angle))
-        p_band = math.exp(-(d / band_sigma) ** 2)
-
-        r = 0.28 + 0.35 * rng.random() + 0.20 * p_band * rng.random()
-        c.circle(x, y, r, stroke=0, fill=1)
-
-    # Catalog stars
-    c.setFillColorRGB(0, 0, 0)
-    c.setStrokeColorRGB(0, 0, 0)
-
-    for s in stars:
-        mag = s["mag"]
-        if mag > cutoff_mag:
-            continue
-
-        xu = ((s["ra_deg"] % 360.0) / 180.0) - 1.0
-        yu = max(-90.0, min(90.0, s["dec_deg"])) / 90.0
-        if not _inside_unit_disk(xu, yu):
-            continue
-
-        x = cx + xu * radius
-        y = cy + yu * radius
-
-        tw = 0.85 + 0.35 * rng.random()
-        star_r = _mag_to_radius_pt(mag, tw)
-
-        if enable_glow and mag <= 0.8:
-            halo_r = star_r * (1.9 + 0.4 * rng.random())
-            c.setFillColorRGB(0.88, 0.88, 0.88)
-            c.circle(x, y, halo_r, stroke=0, fill=1)
-
-            halo2_r = star_r * (1.35 + 0.2 * rng.random())
-            c.setFillColorRGB(0.75, 0.75, 0.75)
-            c.circle(x, y, halo2_r, stroke=0, fill=1)
-
-            c.setFillColorRGB(0, 0, 0)
-
-        c.circle(x, y, star_r, stroke=0, fill=1)
-
-    # ============================================================
-    # TYPOGRAPHY (fix): push block closer to bottom + scale
-    # ============================================================
-    # Scaling per your request:
-    # title x1.5, motto x2, the rest x1.5
-    TITLE_SIZE = 66 * 1.5
-    MOTTO_SIZE = 13 * 2.0
-    LINE2_SIZE = 11 * 1.5
-    LINE3_SIZE = 10.5 * 1.5
-
-    # Tracking (a bit stronger with size)
-    TRACK1 = 1.6 * 1.25
-    TRACK2 = 1.4 * 1.20
-    TRACK3 = 1.2 * 1.20
-
-    # Bottom anchoring: coordinates baseline near bottom margin
-    bottom_margin = side_clear * 1.45
-    y3 = bottom_margin
-    y2 = y3 + (LINE3_SIZE * 1.30)
-    y1 = y2 + (LINE2_SIZE * 2.30)
-    y_title = y1 + (MOTTO_SIZE * 2.30)
-
-    # If the title would collide with the circle, push the whole block down a bit
-    circle_bottom = cy - radius
-    min_gap = side_clear * 0.55  # safety gap between circle and typography
-    if y_title + (TITLE_SIZE * 0.2) > (circle_bottom - min_gap):
-        shift = (y_title + (TITLE_SIZE * 0.2)) - (circle_bottom - min_gap)
-        # Move everything DOWN by shift (i.e., subtract)
-        y_title -= shift
-        y1 -= shift
-        y2 -= shift
-        y3 -= shift
-
-    # Color: slightly softer than pure black
-    c.setFillColorRGB(0.15, 0.15, 0.15)
-
-    title_text = title.strip()
-    c.setFont(fonts["title"], TITLE_SIZE)
-    tw = pdfmetrics.stringWidth(title_text, fonts["title"], TITLE_SIZE)
-    c.drawString(cx - tw / 2.0, y_title, title_text)
-
-    _draw_centered_tracked(c, motto.upper(), cx, y1, fonts["meta"], MOTTO_SIZE, TRACK1)
-
-    loc_date = f"{location_name.upper()}  |  {date_text.upper()}"
-    _draw_centered_tracked(c, loc_date, cx, y2, fonts["meta"], LINE2_SIZE, TRACK2)
-
-    coord = f"{lat:.6f}°N, {lon:.6f}°E"
-    _draw_centered_tracked(c, coord, cx, y3, fonts["meta"], LINE3_SIZE, TRACK3)
+    if is_square_50:
+        _render_square50_banded(
+            c=c,
+            w_pt=w_pt,
+            h_pt=h_pt,
+            rng=rng,
+            fonts=fonts,
+            stars=stars,
+            cutoff_mag=cutoff_mag,
+            enable_glow=enable_glow,
+            title=title,
+            motto=motto,
+            location_name=location_name,
+            date_text=date_text,
+            lat=lat,
+            lon=lon,
+        )
+    else:
+        _render_portrait_circle(
+            c=c,
+            w_pt=w_pt,
+            h_pt=h_pt,
+            rng=rng,
+            fonts=fonts,
+            stars=stars,
+            cutoff_mag=cutoff_mag,
+            enable_glow=enable_glow,
+            title=title,
+            motto=motto,
+            location_name=location_name,
+            date_text=date_text,
+            lat=lat,
+            lon=lon,
+        )
 
     c.showPage()
     c.save()
 
     _pdf_to_preview_png(pdf_path, png_path, dpi=preview_dpi)
-
     return StarsRenderResult(output_pdf=pdf_path, output_preview_png=png_path)

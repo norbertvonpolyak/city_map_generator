@@ -1,44 +1,53 @@
 from __future__ import annotations
 
-import json
-from dataclasses import replace
-from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from enum import Enum
+from typing import Literal
 
-from generator.styles import MonoStyle  # ha máshol van, igazítsd
+from generator.specs import ProductLine, ProductSpec
 
 
-DEFAULT_MONO_JSON_PATH = Path(__file__).resolve().parent / "presets" / "monochrome_default.json"
+# -----------------------------------------------------------------------------
+# Layout preset kulcsok
+# -----------------------------------------------------------------------------
+
+LayoutPreset = Literal[
+    "default",              # citymap / fallback
+    "legacy_portrait",      # starmap álló (körös, régi arányos)
+    "banded_square_50",     # starmap 50x50 speciális keretsávos
+]
 
 
-def load_monochrome_defaults(
+# -----------------------------------------------------------------------------
+# Preset kiválasztás
+# -----------------------------------------------------------------------------
+
+def choose_layout_preset(
     *,
-    fallback_style: MonoStyle,
-    fallback_zoom: float = 0.6,
-    fallback_extent_m: int = 2000,
-    fallback_network_type: str = "all",
-    path: Path = DEFAULT_MONO_JSON_PATH,
-) -> Tuple[MonoStyle, float, int, str]:
+    product_line: ProductLine,
+    spec: ProductSpec,
+) -> LayoutPreset:
     """
-    Loads monochrome default parameters from JSON.
-    Returns: (MonoStyle, zoom, extent_m, network_type)
+    Központi hely a layout döntésekhez.
+
+    JELENLEGI SZABÁLYOK:
+
+    STARMAP:
+      - 50x50  -> banded_square_50
+      - minden más (álló) -> legacy_portrait
+
+    CITYMAP:
+      - default (render mód dönti el a részleteket)
     """
-    if not path.exists():
-        return fallback_style, float(fallback_zoom), int(fallback_extent_m), str(fallback_network_type)
 
-    data: Dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+    # -----------------
+    # STARMAP
+    # -----------------
+    if product_line == ProductLine.STARMAP:
+        if spec.width_cm == 50 and spec.height_cm == 50:
+            return "banded_square_50"
+        return "legacy_portrait"
 
-    mono_style_data = data.get("mono_style") or {}
-    defaults = data.get("defaults") or {}
-
-    # Build style by overriding fallback_style fields with values from JSON
-    style = fallback_style
-    for k, v in mono_style_data.items():
-        if hasattr(style, k):
-            style = replace(style, **{k: v})
-
-    zoom = float(defaults.get("zoom", fallback_zoom))
-    extent_m = int(defaults.get("extent_m", fallback_extent_m))
-    network_type = str(defaults.get("network_type", fallback_network_type))
-
-    return style, zoom, extent_m, network_type
+    # -----------------
+    # CITYMAP (blocks / pretty / mono)
+    # -----------------
+    return "default"
