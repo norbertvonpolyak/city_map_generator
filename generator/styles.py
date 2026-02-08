@@ -37,6 +37,21 @@ PALETTES: Dict[str, List[str]] = {
     "sunset":           ["#ffd6a5","#ffb38a","#ff8f6e","#ff6b6b","#d65a7a","#9b4d7f","#5c3c69"],
 }
 
+def get_palette(name: str) -> List[str]:
+    """
+    City map renderhez használt paletta lekérdezés.
+    A render.py ezt várja: get_palette(palette_name) -> list of hex colors.
+
+    - Ha nincs ilyen paletta: ValueError (jobb, mint a silent fallback)
+    """
+    if not name:
+        raise ValueError("palette name is empty")
+
+    if name not in PALETTES:
+        raise ValueError(f"Unknown palette: {name}. Available: {list(PALETTES.keys())}")
+
+    return PALETTES[name]
+
 
 # =============================================================================
 # MONO STYLE (render_monochrome)
@@ -59,6 +74,9 @@ class MonoStyle:
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
+MONO_PRESETS = {
+    "default": None,  # sentinel: a render_monochrome fallbackoljon a DEFAULT_MONO_STYLE-ra
+}
 
 DEFAULT_MONO_STYLE = MonoStyle()
 

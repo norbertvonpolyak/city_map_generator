@@ -20,7 +20,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--mode",
         choices=["blocks", "pretty", "monochrome", "stars"],
-        default="pretty",
+        default="blocks",
         help="Render mode: blocks / pretty / monochrome / stars",
     )
 

@@ -52,6 +52,26 @@ def get_allowed_size_keys(product_line: ProductLine) -> List[str]:
     return list(SIZES_CM.keys())
 
 
+def validate_size_key_for_product_line(size_key: str, product_line: ProductLine) -> None:
+    """
+    A main.py ezt hívja indításkor.
+
+    - Ha a size_key nem létezik a globális listában -> ValueError
+    - Ha létezik, de az adott termékvonalnál nem engedett -> ValueError
+    """
+    if size_key not in SIZES_CM:
+        raise ValueError(
+            f"Ismeretlen méret kulcs: {size_key}. Választható: {list(SIZES_CM.keys())}"
+        )
+
+    allowed = get_allowed_size_keys(product_line)
+    if size_key not in allowed:
+        raise ValueError(
+            f"A(z) {size_key} méret nem engedélyezett ehhez a termékvonalhoz: {product_line.value}. "
+            f"Engedélyezett méretek: {allowed}"
+        )
+
+
 @dataclass(frozen=True)
 class ProductSpec:
     width_cm: int

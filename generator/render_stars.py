@@ -5,14 +5,17 @@ from pathlib import Path
 import random
 import csv
 import math
+from io import BytesIO
 
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.lib.utils import ImageReader
 
 import fitz  # PyMuPDF
 
 from generator.styles import DEFAULT_STARMAP_STYLE
+from generator.nebula_background import make_nebula_background, NebulaParams
 
 
 @dataclass(frozen=True)
@@ -109,15 +112,6 @@ def _mag_to_radius_pt(mag: float, twinkle: float) -> float:
     t = t ** 0.45
     r = (1.05 + t * 3.10) * twinkle
     return max(st.star_min_radius_pt, r)
-
-
-def draw_fog_dot(c, x: float, y: float, r: float) -> None:
-    st = DEFAULT_STARMAP_STYLE
-    c.saveState()
-    c.setFillColorRGB(*st.mw_fog_rgb)
-    _safe_set_alpha(c, fill=st.mw_fog_alpha)
-    c.circle(x, y, r, stroke=0, fill=1)
-    c.restoreState()
 
 
 def draw_star_glow(c, x: float, y: float, r: float, rng: random.Random) -> None:
@@ -281,8 +275,43 @@ def _portrait_type_scale(h_pt: float) -> float:
     """
     base_h_pt_30x40 = (40.0 / 2.54) * 72.0
     s = h_pt / base_h_pt_30x40
-    # stabil clamp (a jelenlegi starmap méreteknél bőven elég)
     return max(0.72, min(1.08, s))
+
+
+def _pil_to_imagereader_rgb(pil_img) -> ImageReader:
+    """
+    PIL -> ReportLab ImageReader (memóriában, fájl nélkül)
+    """
+    if pil_img.mode != "RGB":
+        pil_img = pil_img.convert("RGB")
+    buf = BytesIO()
+    pil_img.save(buf, format="PNG", optimize=False)
+    buf.seek(0)
+    return ImageReader(buf)
+
+
+def _make_nebula_reader_for_page(*, w_in: float, h_in: float, dpi: int, seed: int) -> ImageReader:
+    w_px = max(32, int(round(w_in * dpi)))
+    h_px = max(32, int(round(h_in * dpi)))
+
+    # paramok már “referencia-közeli” alapértelmezéssel
+    pil_bg = make_nebula_background(
+        width_px=w_px,
+        height_px=h_px,
+        seed=seed,
+        params=NebulaParams(
+            base_darkness=0.58,  # sötétebb dominancia
+            fog_strength=1.35,
+            blotch_strength=0.80,
+            lane_strength=0.38,
+            grain_strength=0.24,
+            vignette=0.48,
+            final_blur=0.55,
+        ),
+
+    )
+
+    return _pil_to_imagereader_rgb(pil_bg)
 
 
 # =============================================================================
@@ -294,6 +323,9 @@ def _render_portrait_circle(
     c,
     w_pt: float,
     h_pt: float,
+    w_in: float,
+    h_in: float,
+    dpi: int,
     rng: random.Random,
     fonts: dict,
     stars: list,
@@ -305,6 +337,7 @@ def _render_portrait_circle(
     date_text: str,
     lat: float,
     lon: float,
+    nebula_reader: ImageReader,
 ) -> None:
     st = DEFAULT_STARMAP_STYLE
 
@@ -320,11 +353,11 @@ def _render_portrait_circle(
     # subtle shadow behind circle (on white page)
     draw_circle_shadow(c, cx, cy, radius)
 
-    # sky in circle
+    # --- NEBULA BACKGROUND (clipped to circle) ---
     c.saveState()
     _clip_to_circle(c, cx, cy, radius)
-    c.setFillColorRGB(*st.sky_rgb)
-    c.rect(0, 0, w_pt, h_pt, stroke=0, fill=1)
+    # full page image, de a clip miatt csak a körben látszik
+    c.drawImage(nebula_reader, 0, 0, width=w_pt, height=h_pt, mask=None)
     c.restoreState()
 
     # circle outline
@@ -335,25 +368,13 @@ def _render_portrait_circle(
     c.circle(cx, cy, radius, stroke=1, fill=0)
     c.restoreState()
 
-    # fog + dust + catalog stars inside clip
+    # dust + catalog stars inside clip (nebula fölé)
     c.saveState()
     _clip_to_circle(c, cx, cy, radius)
 
     band_angle = rng.random() * math.pi
 
-    # milky way fog
-    for _ in range(st.portrait_bg_count):
-        while True:
-            xu = rng.uniform(-1.0, 1.0)
-            yu = rng.uniform(-1.0, 1.0)
-            if _inside_unit_disk(xu, yu):
-                break
-        x = cx + xu * radius
-        y = cy + yu * radius
-        r = 0.35 + 0.55 * rng.random()
-        draw_fog_dot(c, x, y, r)
-
-    # dust texture
+    # dust texture (nebula fölé finom csillagpor)
     draw_star_dust(
         c=c,
         rng=rng,
@@ -433,6 +454,9 @@ def _render_square50_banded(
     c,
     w_pt: float,
     h_pt: float,
+    w_in: float,
+    h_in: float,
+    dpi: int,
     rng: random.Random,
     fonts: dict,
     stars: list,
@@ -444,6 +468,7 @@ def _render_square50_banded(
     date_text: str,
     lat: float,
     lon: float,
+    nebula_reader: ImageReader,
 ) -> None:
     st = DEFAULT_STARMAP_STYLE
 
@@ -451,22 +476,14 @@ def _render_square50_banded(
 
     band_h = h_pt * st.square50_band_height_frac
 
-    # IMPORTANT: sky covers FULL height (so the band is true overlay)
+    # --- NEBULA BACKGROUND full page ---
     c.saveState()
-    c.setFillColorRGB(*st.sky_rgb)
-    c.rect(0, 0, w_pt, h_pt, stroke=0, fill=1)
+    c.drawImage(nebula_reader, 0, 0, width=w_pt, height=h_pt, mask=None)
     c.restoreState()
 
     band_angle = rng.random() * math.pi
 
-    # fog across full page
-    for _ in range(st.square50_bg_count):
-        x = rng.uniform(0.0, w_pt)
-        y = rng.uniform(0.0, h_pt)
-        r = 0.35 + 0.55 * rng.random()
-        draw_fog_dot(c, x, y, r)
-
-    # dust across full page
+    # dust across full page (nebula fölé)
     draw_star_dust(
         c=c,
         rng=rng,
@@ -496,7 +513,7 @@ def _render_square50_banded(
             draw_star_glow(c, x, y, sr, rng)
         draw_star_core(c, x, y, sr)
 
-    # bottom band overlay: thin + 50% translucent
+    # bottom band overlay
     c.saveState()
     c.setFillColorRGB(*st.square50_band_fill_rgb)
     _safe_set_alpha(c, fill=st.square50_band_alpha)
@@ -571,6 +588,17 @@ def render_star_map_stub(
     catalog_path = project_root / "data" / "stars_sample.csv"
     stars = _load_star_catalog_csv(catalog_path) if catalog_path.exists() else []
 
+    # A starmap háttér DPI-je: spec.dpi (mainből jön), fallback 300
+    bg_dpi = int((getattr(spec, "dpi", None) or 300) * 1.4)
+
+    # Nebula háttér generálás egyszer oldalanként (magas felbontás, print-friendly)
+    nebula_reader = _make_nebula_reader_for_page(
+        w_in=w_in,
+        h_in=h_in,
+        dpi=bg_dpi,
+        seed=seed,
+    )
+
     is_square_50 = (getattr(spec, "width_cm", None) == 50 and getattr(spec, "height_cm", None) == 50)
 
     if is_square_50:
@@ -578,6 +606,9 @@ def render_star_map_stub(
             c=c,
             w_pt=w_pt,
             h_pt=h_pt,
+            w_in=w_in,
+            h_in=h_in,
+            dpi=bg_dpi,
             rng=rng,
             fonts=fonts,
             stars=stars,
@@ -589,12 +620,16 @@ def render_star_map_stub(
             date_text=date_text,
             lat=lat,
             lon=lon,
+            nebula_reader=nebula_reader,
         )
     else:
         _render_portrait_circle(
             c=c,
             w_pt=w_pt,
             h_pt=h_pt,
+            w_in=w_in,
+            h_in=h_in,
+            dpi=bg_dpi,
             rng=rng,
             fonts=fonts,
             stars=stars,
@@ -606,6 +641,7 @@ def render_star_map_stub(
             date_text=date_text,
             lat=lat,
             lon=lon,
+            nebula_reader=nebula_reader,
         )
 
     c.showPage()
