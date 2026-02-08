@@ -1,6 +1,7 @@
 # Python
 __pycache__/
 *.pyc
+.venv/
 
 # PyCharm
 .idea/
@@ -24,5 +25,6 @@ data/*
 # But keep CSV files
 !data/*.csv
 
+batch_render_palettes.py
 
 

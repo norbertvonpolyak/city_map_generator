@@ -445,12 +445,12 @@ def render_city_map(
         alpha=1.0,
     )
 
-    # Víz – legfelül, explicit FEHÉRREL (nem style.water-rel), hogy garantáltan ne színeződjön
+    # Víz – legfelül, style.water színnel
     if water_union is not None and not water_union.is_empty:
-        gpd.GeoSeries([water_union], crs=gdf_edges_p.crs).plot(
+        gpd.GeoSeries ([water_union], crs=gdf_edges_p.crs).plot (
             ax=ax,
-            color="white",
-            edgecolor="white",
+            color=style.water,  # <-- MOST MÁR A STYLE-BÓL VESZI!
+            edgecolor=style.water,  # <-- ÉS ITT IS!
             linewidth=0,
         )
 

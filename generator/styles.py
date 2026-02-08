@@ -18,9 +18,9 @@ class Style:
 
 DEFAULT_STYLE = Style(
     background="#e0dbc8",
-    road="#ffffff",
-    bridge="#d0d0d0",
-    water="#ffffff",
+    road="#FFFFFF",        # középszürke utak (MÓDOSÍTVA)
+    bridge="#FFFFFF",      # sötétebb hidak (MÓDOSÍTVA)
+    water="#92B2C4",
 )
 
 
@@ -31,10 +31,11 @@ DEFAULT_STYLE = Style(
 
 PALETTES: Dict[str, List[str]] = {
     "warm":             ["#e28c41","#cd6d40","#e7b573","#e39f55","#c86a3d","#b55a3a","#9b4d37"],
-    "cool":             ["#c5d5e6","#a7bfd8","#89aacb","#6b94bd","#4f7eaf","#386a98","#24537a"],
-    "grayscale":        ["#f2f2f2","#d9d9d9","#bfbfbf","#a6a6a6","#8c8c8c","#737373","#595959"],
-    "green":            ["#d7e9d2","#b7d8b0","#95c78d","#74b66a","#4f9a47","#3f7d39","#2f5f2b"],
-    "sunset":           ["#ffd6a5","#ffb38a","#ff8f6e","#ff6b6b","#d65a7a","#9b4d7f","#5c3c69"],
+    "amber_district": [ "#2f2f33", "#4a4a4a","#8c7a5b", "#b89b5e", "#d4b35f", "#e2cfa4", "#c76a3a"],
+    "slate_harbor": ["#2c333a", "#4f5d6a", "#7a8c99", "#a7b5b8", "#c9cfcb", "#bfae9f", "#9e8c7a"],
+    "grayscale":        ["#f2f2f2","#d9d9d9","#bfbfbf","#8c8c8c","#737373","#595959","#535353"], # #92B2C4 vízszínnel megy jól
+    "pastel":           ["#ffcb77","#eed3a6","#dddad5","#eea4a4","#fe6d73","#17c3b2","#227c9d"],
+    "bronze":           ["#bfbdc1","#6d6a75","#524e5a","#37323e","#8b7540","#deb841","#de9e36"]
 }
 
 def get_palette(name: str) -> List[str]:

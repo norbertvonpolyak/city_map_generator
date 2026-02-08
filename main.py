@@ -33,7 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--output-dir",
         type=Path,
-        default=Path(r"C:\Users\T470\OneDrive\Asztali gép\WEBSHOP"),
+        default=Path(r"C:\Users\Q642000\OneDrive - BMW Group\Asztal\Sajat\RENDERED IMAGES"),
         help="Output directory",
     )
 
@@ -41,7 +41,7 @@ def build_parser() -> argparse.ArgumentParser:
     # BLOCKS / PRETTY
     # ---------------
 
-    p.add_argument("--palette", default="warm", help="Palette name (blocks/pretty). Ignored in monochrome.")
+    p.add_argument("--palette", default="grayscale", help="Palette name (blocks/pretty). Ignored in monochrome.")
     p.add_argument("--seed", type=int, default=42, help="Seed (blocks; also used in monochrome)")
     p.add_argument("--zoom", type=float, default=0.6, help="Zoom factor for pretty/monochrome (e.g. 0.6 or 0.4)")
 
