@@ -41,7 +41,7 @@ def build_parser() -> argparse.ArgumentParser:
     # BLOCKS / PRETTY
     # ---------------
 
-    p.add_argument("--palette", default="grayscale", help="Palette name (blocks/pretty). Ignored in monochrome.")
+    p.add_argument("--palette", default="urban_modern", help="Palette name (blocks/pretty). Ignored in monochrome.")
     p.add_argument("--seed", type=int, default=42, help="Seed (blocks; also used in monochrome)")
     p.add_argument("--zoom", type=float, default=0.6, help="Zoom factor for pretty/monochrome (e.g. 0.6 or 0.4)")
 

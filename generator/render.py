@@ -256,36 +256,16 @@ def render_city_map(
     min_poly_area: float = 300.0,
     road_width: float = 0.8,
 ) -> RenderResult:
-    """
-    Webshop-kompatibilis render:
-    - frame (téglalap) a spec képarányával
-    - tömbök színezése palettából
-    - lyuk kitöltése 1 palettaszínnel (nem darabolva)
-    - utak fehérek, hidak halvány szürkék
-    - MINDEN víz fehér (belvizek + tenger)
-    - kikötő/port/industrial/commercial területek kitölthetők road-loop nélkül is
-    - PDF mentés timestamp névvel
-    """
-    if not (-90.0 <= center_lat <= 90.0):
-        raise ValueError("center_lat érvénytelen (−90..90).")
-    if not (-180.0 <= center_lon <= 180.0):
-        raise ValueError("center_lon érvénytelen (−180..180).")
 
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    # determinisztikus random (ha seed=None, minden futás más)
     if seed is not None:
         np.random.seed(seed)
         random.seed(seed)
 
     palette: List[str] = get_palette(palette_name)
 
-    # Frame méretek (méterben) és fizikai export méretek (inch)
     half_width_m, half_height_m = spec.frame_half_sizes_m
     fig_w_in, fig_h_in = spec.fig_size_inches
 
-    # Útvastagság skálázása a kiterjedéshez
     scaled_road_width = _scaled_linewidth(
         half_height_m=half_height_m,
         base_linewidth=road_width,
@@ -294,14 +274,20 @@ def render_city_map(
         max_lw=2.2,
     )
 
-    # Letöltési távolság: félátló + tartalék
+    # HIERARCHY WIDTHS
+    lw_major = scaled_road_width * 1.5
+    lw_medium = scaled_road_width * 1.15
+    lw_minor = scaled_road_width * 0.80
+    lw_bridge = scaled_road_width * 1.6
+
     dist_m = int(np.ceil((half_width_m**2 + half_height_m**2) ** 0.5)) + 300
 
-    # Timestampes fájlnév (nem ír felül)
     ts = _safe_timestamp()
     output_pdf = output_dir / f"{filename_prefix}_{spec.width_cm}x{spec.height_cm}cm_{ts}.pdf"
 
-    # 1) Úthálózat letöltés + edges gdf
+    # ------------------------
+    # ROAD NETWORK
+    # ------------------------
     G = ox.graph_from_point(
         (center_lat, center_lon),
         dist=dist_m,
@@ -312,7 +298,9 @@ def render_city_map(
     gdf_edges = ox.graph_to_gdfs(G, nodes=False, edges=True)
     gdf_edges_p = ox.projection.project_gdf(gdf_edges)
 
-    # 2) Frame téglalap projekcióban
+    # ------------------------
+    # FRAME
+    # ------------------------
     center = gpd.GeoDataFrame(geometry=[Point(center_lon, center_lat)], crs="EPSG:4326")
     center_p = ox.projection.project_gdf(center).geometry.iloc[0]
 
@@ -324,7 +312,9 @@ def render_city_map(
     clip_rect = box(minx, miny, maxx, maxy)
     rect_boundary = clip_rect.boundary
 
-    # 3) Víz union: belvizek + tenger (mind frame-re vágva)
+    # ------------------------
+    # WATER (BELVÍZ + TENGER)
+    # ------------------------
     inland_water_union = _fetch_water_union(
         center_lat=center_lat,
         center_lon=center_lon,
@@ -333,7 +323,7 @@ def render_city_map(
     )
 
     sea_poly = _fetch_sea_polygon(
-        center_point_proj=center_p,  # <-- új
+        center_point_proj=center_p,
         center_lat=center_lat,
         center_lon=center_lon,
         dist_m=dist_m,
@@ -350,7 +340,9 @@ def render_city_map(
             parts.append(sea_poly)
         water_union = unary_union(parts).intersection(clip_rect)
 
-    # 4) “Frame = utca”: polygonize a frame-en belül + frame boundary
+    # ------------------------
+    # POLYGONIZE
+    # ------------------------
     edges_clip = gpd.clip(gdf_edges_p, gpd.GeoSeries([clip_rect], crs=gdf_edges_p.crs))
 
     line_geoms = list(edges_clip.geometry.values)
@@ -363,44 +355,16 @@ def render_city_map(
     gdf_blocks_p = gdf_blocks_p[gdf_blocks_p.geometry.within(clip_rect)]
     gdf_blocks_p = gdf_blocks_p[gdf_blocks_p.geometry.area > float(min_poly_area)]
 
-    # 4/b) Kikötő/port/industrial/commercial területek hozzáadása (road-loop nélkül is kitölthető)
-    harbour_union = _fetch_harbour_areas_union(
-        center_lat=center_lat,
-        center_lon=center_lon,
-        dist_m=dist_m,
-        clip_rect=clip_rect,
-    )
-    if harbour_union is not None:
-        # union -> daraboljuk polygonokra, majd hozzáfűzzük a blocks-hoz
-        harbour_series = gpd.GeoSeries([harbour_union], crs=gdf_edges_p.crs)
-        # MultiPolygon esetén explode
-        harbour_exploded = harbour_series.explode(index_parts=False)
-        harbour_exploded = harbour_exploded[~harbour_exploded.is_empty]
-        if len(harbour_exploded) > 0:
-            gdf_harbour = gpd.GeoDataFrame(geometry=harbour_exploded, crs=gdf_edges_p.crs)
-            # kis darabok szűrése a min_poly_area-rel
-            gdf_harbour = gdf_harbour[gdf_harbour.geometry.area > float(min_poly_area)]
-            if len(gdf_harbour) > 0:
-                gdf_blocks_p = gpd.GeoDataFrame(
-                    geometry=list(gdf_blocks_p.geometry.values) + list(gdf_harbour.geometry.values),
-                    crs=gdf_edges_p.crs,
-                )
-
-    # 5) Víz kivonása a blokkokból (hogy semmi víz ne legyen színes)
+    # ------------------------
+    # WATER KIVONÁS A BLOKKOKBÓL
+    # ------------------------
     if water_union is not None and len(gdf_blocks_p) > 0:
         gdf_blocks_p["geometry"] = gdf_blocks_p.geometry.difference(water_union)
         gdf_blocks_p = gdf_blocks_p[~gdf_blocks_p.is_empty]
 
-    # 6) “Lyuk” = frame - víz - blokkok_unió (1 db színnel töltjük)
-    blocks_union = gdf_blocks_p.unary_union if len(gdf_blocks_p) > 0 else None
-
-    hole = clip_rect
-    if water_union is not None:
-        hole = hole.difference(water_union)
-    if blocks_union is not None:
-        hole = hole.difference(blocks_union)
-
-    # Színkiosztás
+    # ------------------------
+    # COLORING
+    # ------------------------
     if palette_name == "warm":
         hole_color = np.random.choice(palette)
         block_colors = np.random.choice(palette, size=len(gdf_blocks_p), replace=True)
@@ -410,58 +374,115 @@ def render_city_map(
         hole_color = np.random.choice(palette, p=p)
         block_colors = np.random.choice(palette, size=len(gdf_blocks_p), replace=True, p=p)
 
-    # 7) Plot
+    # ------------------------
+    # PLOT
+    # ------------------------
     fig, ax = plt.subplots(figsize=(fig_w_in, fig_h_in))
     fig.patch.set_facecolor(style.background)
     ax.set_facecolor(style.background)
 
-    # Lyuk kitöltése (nem darabolva)
-    if not hole.is_empty:
-        gpd.GeoSeries([hole], crs=gdf_edges_p.crs).plot(ax=ax, color=hole_color, linewidth=0)
-
-    # Blokkok színezése
     if len(gdf_blocks_p) > 0:
         gdf_blocks_p.plot(ax=ax, color=block_colors, linewidth=0)
 
-    # Utcák
-    gdf_edges_p.plot(ax=ax, color=style.road, linewidth=scaled_road_width, alpha=1.0)
+    # ------------------------
+    # ROAD CLASSIFICATION
+    # ------------------------
+    def _classify_highway(hw):
+        if isinstance(hw, list):
+            hw = hw[0]
+        if hw in ["motorway", "trunk", "primary"]:
+            return "major"
+        elif hw in ["secondary", "tertiary"]:
+            return "medium"
+        else:
+            return "minor"
 
-    # Hidak (ugyanazzal a skálázott vastagsággal)
+    gdf_edges_p["road_class"] = gdf_edges_p["highway"].apply(_classify_highway)
+
+    major = gdf_edges_p[gdf_edges_p["road_class"] == "major"]
+    medium = gdf_edges_p[gdf_edges_p["road_class"] == "medium"]
+    minor = gdf_edges_p[gdf_edges_p["road_class"] == "minor"]
+
+    # Rajzolási sorrend: kicsi → nagy
+    if len(minor) > 0:
+        minor.plot(ax=ax, color=style.road, linewidth=lw_minor, alpha=1.0)
+
+    if len(medium) > 0:
+        medium.plot(ax=ax, color=style.road, linewidth=lw_medium, alpha=1.0)
+
+    if len(major) > 0:
+        major.plot(ax=ax, color=style.road, linewidth=lw_major, alpha=1.0)
+
+    # ------------------------
+    # BRIDGES
+    # ------------------------
     if "bridge" in gdf_edges.columns:
         bridges = gdf_edges[gdf_edges["bridge"].notna()].copy()
         if len(bridges) > 0:
             ox.projection.project_gdf(bridges).plot(
                 ax=ax,
                 color=style.bridge,
-                linewidth=scaled_road_width,
+                linewidth=lw_bridge,
                 alpha=1.0,
             )
 
-    # Frame pereme “utca”
+    # Frame boundary
     gpd.GeoSeries([rect_boundary], crs=gdf_edges_p.crs).plot(
         ax=ax,
         color=style.road,
-        linewidth=scaled_road_width,
+        linewidth=lw_medium,
         alpha=1.0,
     )
 
-    # Víz – legfelül, style.water színnel
+    # ------------------------
+    # WATER – LEGELÜL
+    # ------------------------
     if water_union is not None and not water_union.is_empty:
-        gpd.GeoSeries ([water_union], crs=gdf_edges_p.crs).plot (
+        gpd.GeoSeries([water_union], crs=gdf_edges_p.crs).plot(
             ax=ax,
-            color=style.water,  # <-- MOST MÁR A STYLE-BÓL VESZI!
-            edgecolor=style.water,  # <-- ÉS ITT IS!
+            color=style.water,
+            edgecolor=style.water,
             linewidth=0,
         )
 
-    # Nézet: pontosan a frame
-    ax.set_xlim(minx, maxx)
-    ax.set_ylim(miny, maxy)
-    ax.set_axis_off()
+    # ------------------------
+    # CLEAN COMPOSITION CROP
+    # ------------------------
 
-    # 8) Mentés PDF
-    print("Saving PDF to:", output_pdf)
-    fig.savefig(output_pdf, format="pdf", dpi=spec.dpi, bbox_inches="tight")
+    bottom_cut_frac = 0.07  # mostani kb fele (korábban 0.12 volt)
+
+    frame_height = maxy - miny
+    new_miny = miny + frame_height * bottom_cut_frac
+    plt.subplots_adjust (left=0.02, right=0.98, top=0.98, bottom=0.02)
+
+    bottom_cut_frac = 0.05  # finom alsó levágás (5%)
+
+    frame_height = maxy - miny
+    new_miny = miny + frame_height * bottom_cut_frac
+
+    ax.set_xlim (minx, maxx)
+    ax.set_ylim (new_miny, maxy)
+    outer_margin = 0.02
+    ax.set_axis_off ()
+
+    # ---------------------------------
+    # MANUAL AXES POSITIONING
+    # ---------------------------------
+
+    left_margin = 0.02
+    right_margin = 0.02
+    top_margin = 0.025
+    bottom_margin = 0.08  # nagyobb alsó sáv
+
+    ax.set_position ([
+        left_margin,
+        bottom_margin,
+        1 - left_margin - right_margin,
+        1 - top_margin - bottom_margin
+    ])
+
+    fig.savefig (output_pdf, format="pdf", dpi=spec.dpi)
+
     plt.close(fig)
 
     return RenderResult(output_pdf=output_pdf)
