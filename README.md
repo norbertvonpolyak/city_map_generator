@@ -12,33 +12,61 @@ skálázható termékméretek (cm → arány → vonalvastagság).
 
 # ✨ Fő jellemzők
 
-Monochrome (Pretty) render mód
-járműutak hierarchikus vastagsággal
-gyalogos / biciklis / path rétegek alapértelmezésben kizárva
-tiszta, poszter-szerű megjelenés
-Polygonize-alapú várostömb színezés
-Épületek, parkok, ipari területek kezelése
-Vízfelületek egységes, fehér renderelése
-folyók, tavak, tenger (coastline + sea mask)
-Opcionális domborzati árnyalás (hillshade)
-Termékméret-független vonalvastagság skálázás
-Streamlit-alapú developer style tuner (nem runtime függőség)
+Polygonize-alapú várostömb generálás
+OSM úthálózatból automatikusan képzett city block struktúra.
+
+Hierarchikus úthálózat renderelés
+Motorway → arterial → local → minor vastagsági rendszer
+determinista skálázással a térképkiterjedéshez igazítva.
+
+Minimalista vizuális stílusrendszer
+Palette-alapú konfiguráció:
+-blokkszínek
+-útszín
+-vízszín
+-úthierarchia vastagság
+-egységes tipográfiai strip
+
+Egységes alsó layout strip (ReportLab composer)
+-fix cm-alapú strip magasság
+-jobbra zárt cím
+-külön betűstílus subtitle számára
+-bal oldali logó támogatás
+-vékony, egységes keret minden oldalon
+
+Termékméret-független renderelés
+-cm → arány → DPI → pontos nyomdai PDF méret
+-minden méret azonos layout arányokkal.
+
+Determinista kimenet
+-seed alapú blokkszínezés
+-reprodukálható render.
+
+Nyomdai minőségű PDF export
+-ReportLab-alapú végső kompozíció
+-timestampelt fájlnév
+-méretazonosító a fájlnévben
 
 # 🧱 Projektstruktúra
 
 ```text city_map_generator/
-├── main.py                     # CLI / entry point
+city_map_generator/
+│
+├── main.py
+├── requirements.txt
+│
 ├── generator/
-│   ├── render_monochrome.py    # Monochrome (pretty) renderer
-│   ├── render_pretty.py        # Legacy / blocks render
-│   ├── styles.py               # Style source of truth
-│   ├── specs.py                # ProductSpec (méretek, DPI, frame)
-│   ├── relief.py               # DEM + hillshade kezelés
-│   ├── presets_loader.py       # (dev helper, opcionális)
-│   └── style_tuner.py          # Developer-only tuner logika
-├── tools/
-│   └── style_tuner_app.py      # Streamlit UI stílus finomhangoláshoz
-└── README.md
+│   ├── render.py
+│   ├── layout_composer.py
+│   ├── specs.py
+│   ├── styles.py
+│   ├── relief.py
+│   └── presets_loader.py
+│
+├── Fonts/
+├── Logo/
+└── output/
+
 ```
 # 🎨 Stílusrendszer
 
@@ -110,25 +138,18 @@ result = render_city_map_monochrome(
 )
 ```
 
-# 🧪 Style Tuner (developer-only)
-
-A Streamlit tuner nem része a runtime pipeline-nak.
-
-### Célja:
-MonoStyle finomhangolása vizuális preview-val és az értékek kézi visszamásolása a styles.py-ba
-
-### Indítás:
-```
-streamlit run tools/style_tuner_app.py
-```
-A tuner nem exportál, nem ír fájlt – a végleges stílus mindig hardcode-olt.
-
 # 🖨️ Kimenetek
 
-PDF – nyomdai minőség (CMYK-kompatibilis workflow)
-PNG – preview / fejlesztés
-SVG - to be implemented
+Print-ready PDF (ReportLab)
 
+Timestampelt fájlnév:
+citymap_50x70_2026-02-16_21-45-12.pdf
+
+A PDF tartalmaz:
+felső térképréteg (matplotlib render)
+alsó strip
+bal oldali logó
+jobb oldali cím + koordináta blokk
 automatikus timestampelt fájlnevek
 
 # 🔒 Projektállapot
@@ -136,12 +157,40 @@ automatikus timestampelt fájlnevek
 aktív fejlesztés webshop-integrációra előkészítve
 stabil monochrome baseline a main branch-ben
 
+# 🧠 Architektúra
+
+A rendszer kétlépcsős:
+Map Layer Render (matplotlib → PNG)
+Print Composition (ReportLab → PDF)
+Ez biztosítja a layout és a render teljes szétválasztását.
+
 # 🚀 Következő tervezett lépések
 
-további MonoStyle variánsok (high contrast, ultra minimal)
-SVG / DXF export gyártáshoz
-webes rendelési felület (map selection + preview)
-snap-to-land / coastline-aware framing finomítása
+🎯 1. SVG / DXF export gyártáshoz
+Vektoros kimenet bevezetése lézervágás / gravírozás / CNC workflow támogatására.
+
+🛒 2. Webshop-integráció
+Frontend alapú:
+térképpont kiválasztás
+élő preview
+méretválasztás
+automatikus PDF generálás backend oldalon
+
+🌊 3. Coastline-aware framing finomítása
+Part menti városok esetén:
+snap-to-land logika
+intelligens center korrekció
+kompozíciós optimalizálás
+
+🧭 4. Kompozíciós preset rendszer
+Strip variánsok:
+minimal
+logo-free edition
+centered title
+editorial layout
+
+📐 5. Méretfüggő tipográfia finomhangolás
+Kisebb méreteknél dinamikus font scaling, hogy 30×40 alatt se legyen túl domináns a cím.
 
 # 👤 Szerző
 <span style="color:#d73a49; font-weight:600;">Norbert von Polyák</span>
