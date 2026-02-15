@@ -10,10 +10,6 @@ from typing import Tuple, List
 # FONTOS: itt minden termékvonal közös "univerzális" listája lehet,
 # a termékvonal-specifikus szűrést a get_allowed_size_keys() csinálja.
 SIZES_CM = {
-    "21x30": (21, 30),
-
-    # landscape variánsok (CITYMAP-hoz maradhatnak)
-    "30x21": (30, 21),
 
     "30x40": (30, 40),
     "40x30": (40, 30),

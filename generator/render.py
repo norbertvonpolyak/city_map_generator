@@ -12,7 +12,6 @@ import numpy as np
 import osmnx as ox
 from shapely.geometry import Point, box
 from shapely.ops import polygonize, unary_union
-from matplotlib.patches import Rectangle
 
 from generator.specs import ProductSpec
 from generator.styles import get_palette_config
@@ -24,7 +23,7 @@ from generator.styles import get_palette_config
 
 @dataclass(frozen=True)
 class RenderResult:
-    output_pdf: Optional[Path] = None
+    output_png: Path
 
 
 # =============================================================================
@@ -48,7 +47,7 @@ def _classify_road(hw: str) -> str:
 
 
 # =============================================================================
-# MAIN
+# MAIN – MAP LAYER ONLY
 # =============================================================================
 
 def render_city_map(
@@ -59,7 +58,7 @@ def render_city_map(
     output_dir: Path,
     palette_name: str,
     seed: int = 42,
-    filename_prefix: str = "city_blocks",
+    filename_prefix: str = "map_layer",
 ) -> RenderResult:
 
     random.seed(seed)
@@ -75,7 +74,7 @@ def render_city_map(
     ts = _safe_timestamp()
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    out_pdf = output_dir / f"{filename_prefix}_{spec.width_cm}x{spec.height_cm}cm_{ts}.pdf"
+    out_png = output_dir / f"{filename_prefix}_{ts}.png"
 
     # -------------------------------------------------------------------------
     # CENTER + BBOX
@@ -112,7 +111,7 @@ def render_city_map(
     edges_p["road_class"] = edges_p["highway"].apply(_classify_road)
 
     # -------------------------------------------------------------------------
-    # POLYGONIZE WITH BOUNDARY (CRITICAL FIX)
+    # POLYGONIZE WITH BOUNDARY
     # -------------------------------------------------------------------------
 
     boundary = clip_rect.boundary
@@ -152,28 +151,12 @@ def render_city_map(
         pass
 
     # -------------------------------------------------------------------------
-    # FIGURE
+    # FIGURE – NO MARGINS, NO BORDER
     # -------------------------------------------------------------------------
 
     fig, ax = plt.subplots(figsize=(fig_w_in, fig_h_in))
     fig.patch.set_facecolor(palette_cfg.background)
     ax.set_facecolor(palette_cfg.background)
-
-    # ---- CM based margins (STABLE!) ----
-
-    margin_cm = 1.0
-    margin_in = margin_cm / 2.54
-
-    left = margin_in / fig_w_in
-    right = 1 - (margin_in / fig_w_in)
-    top = 1 - (margin_in / fig_h_in)
-    bottom = margin_in / fig_h_in
-
-    fig.subplots_adjust(left=left, right=right, top=top, bottom=bottom)
-
-    # -------------------------------------------------------------------------
-    # DRAW ORDER
-    # -------------------------------------------------------------------------
 
     # Blocks
     if len(blocks_gdf) > 0:
@@ -213,22 +196,14 @@ def render_city_map(
     ax.set_ylim(miny, maxy)
     ax.set_axis_off()
 
-    # -------------------------------------------------------------------------
-    # VERY THIN BORDER
-    # -------------------------------------------------------------------------
-
-    border = Rectangle(
-        (0, 0),
-        1,
-        1,
-        transform=fig.transFigure,
-        fill=False,
-        linewidth=0.8,
-        edgecolor="#222222",
+    fig.savefig(
+        out_png,
+        format="png",
+        dpi=spec.dpi,
+        bbox_inches="tight",
+        pad_inches=0,
     )
-    fig.patches.append(border)
 
-    fig.savefig(out_pdf, format="pdf", dpi=spec.dpi)
     plt.close(fig)
 
-    return RenderResult(output_pdf=out_pdf)
+    return RenderResult(output_png=out_png)
