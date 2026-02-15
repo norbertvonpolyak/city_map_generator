@@ -9,7 +9,7 @@ determinisztikus renderelés,
 OSM-adatok intelligens feldolgozása,
 skálázható termékméretek (cm → arány → vonalvastagság).
 
-
+ 
 # ✨ Fő jellemzők
 
 Polygonize-alapú várostömb generálás
