@@ -12,6 +12,8 @@ output/
 renders/
 *.pdf
 *.png
+!Logo/dotty_map_logo.png
+
 
 # OS
 .DS_Store
