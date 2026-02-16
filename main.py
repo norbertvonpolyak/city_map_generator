@@ -15,33 +15,15 @@ from generator.layout_composer import compose_print_pdf
 
 
 # =============================================================================
-# HELPERS
-# =============================================================================
-
-def format_coordinate(value: float, is_lat: bool) -> str:
-    """
-    4 tizedesre vágott koordináta formázás
-    Égtáj jelöléssel
-    """
-    direction = ""
-    if is_lat:
-        direction = "N" if value >= 0 else "S"
-    else:
-        direction = "E" if value >= 0 else "W"
-
-    return f"{abs(value):.4f}° {direction}"
-
-
-# =============================================================================
 # ARG PARSER
 # =============================================================================
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        description="City Map Renderer – B Architecture"
+        description="City Map Renderer – B Architecture (SVG pipeline)"
     )
 
-    p.add_argument("--size-key", default="50x50")
+    p.add_argument("--size-key", default="70x50")
     p.add_argument("--extent-m", type=int, default=2000)
     p.add_argument("--dpi", type=int, default=300)
 
@@ -54,9 +36,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--seed", type=int, default=42)
 
     p.add_argument("--title", type=str,
-                   default="Washington D.C.")
+                   default="WASHINGTON D.C.")
 
-    # Ha None → automatikusan generáljuk
     p.add_argument("--subtitle", type=str,
                    default=None)
 
@@ -69,10 +50,18 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--font-path",
         type=str,
-        default=r"C:\Users\Q642000\PycharmProjects\city_map_generator\Fonts\Monoton-Regular.ttf",
+        default=None,
     )
 
     return p
+
+
+# =============================================================================
+# HELPERS
+# =============================================================================
+
+def format_short_coords(lat: float, lon: float) -> str:
+    return f"{lat:.4f}° N {lon:.4f}° E"
 
 
 # =============================================================================
@@ -100,11 +89,11 @@ def main() -> None:
 
     print("--------------------------------------------------")
     print("B Architecture Active")
-    print("Step 1: Rendering map layer")
+    print("Step 1: Rendering map layer (SVG)")
     print("--------------------------------------------------")
 
     # -------------------------------------------------------------------------
-    # STEP 1 – MAP LAYER
+    # STEP 1 – MAP LAYER (SVG)
     # -------------------------------------------------------------------------
 
     map_layer_result = render_city_map(
@@ -116,49 +105,37 @@ def main() -> None:
         seed=args.seed,
     )
 
-    map_png_path = map_layer_result.output_png
-    print("Map layer PNG:", map_png_path)
+    map_svg_path = map_layer_result.output_svg
+    print("Map layer SVG:", map_svg_path)
 
     # -------------------------------------------------------------------------
-    # SUBTITLE AUTO GENERATION
+    # STEP 2 – FINAL PRINT PDF
     # -------------------------------------------------------------------------
-
-    if args.subtitle is None:
-        lat_str = format_coordinate(args.center_lat, is_lat=True)
-        lon_str = format_coordinate(args.center_lon, is_lat=False)
-        subtitle = f"{lat_str} {lon_str}"
-    else:
-        subtitle = args.subtitle
-
-    print("Subtitle:", subtitle)
 
     print("--------------------------------------------------")
     print("Step 2: Composing final print PDF")
     print("--------------------------------------------------")
 
-    # -------------------------------------------------------------------------
-    # STEP 2 – FINAL PDF
-    # -------------------------------------------------------------------------
-
-    timestamp = time.strftime("%Y-%m-%d_%H-%M-%S")
+    subtitle_text = (
+        args.subtitle
+        if args.subtitle
+        else format_short_coords(args.center_lat, args.center_lon)
+    )
 
     layout_result = compose_print_pdf(
         spec=spec,
-        map_image_path=map_png_path,
+        map_svg_path=map_svg_path,
         output_dir=args.output_dir,
         size_key=args.size_key,
         title=args.title,
-        subtitle=subtitle,
+        subtitle=subtitle_text,
         font_path=args.font_path,
     )
 
     print("Final PDF:", layout_result.output_pdf)
 
     total_end = time.perf_counter()
-
-    print("--------------------------------------------------")
     print(f"Total time : {total_end - total_start:.2f} seconds")
-    print("--------------------------------------------------")
 
 
 if __name__ == "__main__":

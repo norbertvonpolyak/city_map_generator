@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 import random
+import math
 
 import geopandas as gpd
 import matplotlib.pyplot as plt
@@ -23,7 +24,7 @@ from generator.styles import get_palette_config
 
 @dataclass(frozen=True)
 class RenderResult:
-    output_png: Path
+    output_svg: Optional[Path] = None
 
 
 # =============================================================================
@@ -47,7 +48,7 @@ def _classify_road(hw: str) -> str:
 
 
 # =============================================================================
-# MAIN – MAP LAYER ONLY
+# MAIN RENDER (SVG + PHYSICAL OVERSCAN)
 # =============================================================================
 
 def render_city_map(
@@ -66,22 +67,46 @@ def render_city_map(
 
     palette_cfg = get_palette_config(palette_name)
 
-    fig_w_in, fig_h_in = spec.fig_size_inches
-    half_width_m, half_height_m = spec.frame_half_sizes_m
+    # ------------------------------------------------------------
+    # INNER MAP AREA (1cm sides + 1cm top + 4cm bottom reserved)
+    # ------------------------------------------------------------
 
-    dist_m = int(np.ceil((half_width_m ** 2 + half_height_m ** 2) ** 0.5)) + 200
+    inner_width_cm = spec.width_cm - 2       # 1cm left + 1cm right
+    inner_height_cm = spec.height_cm - 5     # 1cm top + 4cm bottom
+
+    fig_w_in = inner_width_cm / 2.54
+    fig_h_in = inner_height_cm / 2.54
+
+    # ------------------------------------------------------------
+    # MAP ASPECT RATIO BASED ON INNER AREA
+    # ------------------------------------------------------------
+
+    inner_ratio = inner_width_cm / inner_height_cm
+
+    half_height_m = spec.extent_m
+    half_width_m = half_height_m * inner_ratio
+
+    # ------------------------------------------------------------
+    # DISTANCE FOR OSM QUERY
+    # ------------------------------------------------------------
+
+    dist_m = int(
+        math.ceil(
+            math.sqrt(half_width_m**2 + half_height_m**2)
+        )
+    ) + 300
 
     ts = _safe_timestamp()
     output_dir.mkdir(parents=True, exist_ok=True)
+    out_svg = output_dir / f"{filename_prefix}_{ts}.svg"
 
-    out_png = output_dir / f"{filename_prefix}_{ts}.png"
-
-    # -------------------------------------------------------------------------
+    # ------------------------------------------------------------
     # CENTER + BBOX
-    # -------------------------------------------------------------------------
+    # ------------------------------------------------------------
 
     center = gpd.GeoDataFrame(
-        geometry=[Point(center_lon, center_lat)], crs="EPSG:4326"
+        geometry=[Point(center_lon, center_lat)],
+        crs="EPSG:4326"
     )
 
     center_p = ox.projection.project_gdf(center).geometry.iloc[0]
@@ -93,9 +118,9 @@ def render_city_map(
 
     clip_rect = box(minx, miny, maxx, maxy)
 
-    # -------------------------------------------------------------------------
-    # ROADS
-    # -------------------------------------------------------------------------
+    # ------------------------------------------------------------
+    # GRAPH
+    # ------------------------------------------------------------
 
     G = ox.graph_from_point(
         (center_lat, center_lon),
@@ -110,9 +135,25 @@ def render_city_map(
 
     edges_p["road_class"] = edges_p["highway"].apply(_classify_road)
 
-    # -------------------------------------------------------------------------
-    # POLYGONIZE WITH BOUNDARY
-    # -------------------------------------------------------------------------
+    # ------------------------------------------------------------
+    # WATER
+    # ------------------------------------------------------------
+
+    water = ox.features_from_point(
+        (center_lat, center_lon),
+        tags={"natural": "water"},
+        dist=dist_m,
+    )
+
+    if len(water) > 0:
+        water_p = ox.projection.project_gdf(water)
+        water_p = gpd.clip(water_p, gpd.GeoSeries([clip_rect], crs=water_p.crs))
+    else:
+        water_p = None
+
+    # ------------------------------------------------------------
+    # BLOCKS (POLYGONIZE)
+    # ------------------------------------------------------------
 
     boundary = clip_rect.boundary
     merged = unary_union(list(edges_p.geometry) + [boundary])
@@ -121,42 +162,35 @@ def render_city_map(
     blocks_gdf = gpd.GeoDataFrame(geometry=polygons, crs=edges_p.crs)
     blocks_gdf = gpd.clip(blocks_gdf, gpd.GeoSeries([clip_rect], crs=blocks_gdf.crs))
 
+    # Remove water from blocks
+    if water_p is not None and len(water_p) > 0:
+        water_union = water_p.unary_union
+        blocks_gdf["geometry"] = blocks_gdf.geometry.difference(water_union)
+
     if len(blocks_gdf) > 0:
         blocks_gdf["color"] = np.random.choice(
-            palette_cfg.blocks, size=len(blocks_gdf)
+            palette_cfg.blocks,
+            size=len(blocks_gdf)
         )
 
-    # -------------------------------------------------------------------------
-    # WATER
-    # -------------------------------------------------------------------------
+    # ------------------------------------------------------------
+    # PLOT (FULL-BLEED AXES, NO MARGINS)
+    # ------------------------------------------------------------
 
-    water_p = None
+    fig = plt.figure(figsize=(fig_w_in, fig_h_in))
+    ax = fig.add_axes([0, 0, 1, 1])  # full bleed
 
-    try:
-        water = ox.features_from_point(
-            (center_lat, center_lon),
-            tags={"natural": ["water"], "waterway": True},
-            dist=dist_m,
-        )
-
-        if len(water) > 0:
-            water = water[water.geometry.notnull()]
-            water_p = ox.projection.project_gdf(water)
-            water_p = gpd.clip(
-                water_p,
-                gpd.GeoSeries([clip_rect], crs=water_p.crs),
-            )
-
-    except Exception:
-        pass
-
-    # -------------------------------------------------------------------------
-    # FIGURE – NO MARGINS, NO BORDER
-    # -------------------------------------------------------------------------
-
-    fig, ax = plt.subplots(figsize=(fig_w_in, fig_h_in))
     fig.patch.set_facecolor(palette_cfg.background)
     ax.set_facecolor(palette_cfg.background)
+
+    # Water
+    if water_p is not None and len(water_p) > 0:
+        water_p.plot(
+            ax=ax,
+            color=palette_cfg.water,
+            linewidth=0,
+            zorder=1,
+        )
 
     # Blocks
     if len(blocks_gdf) > 0:
@@ -167,28 +201,17 @@ def render_city_map(
             zorder=5,
         )
 
-    # Water
-    if water_p is not None and len(water_p) > 0:
-        water_p.plot(
-            ax=ax,
-            color=palette_cfg.water_fill,
-            edgecolor="none",
-            zorder=10,
-        )
-
     # Roads
     road_width_base = palette_cfg.road_style.base_width
     multipliers = palette_cfg.road_style.multipliers
 
     for cls, mult in multipliers.items():
         subset = edges_p[edges_p["road_class"] == cls]
-
         if len(subset) > 0:
             subset.plot(
                 ax=ax,
                 color=palette_cfg.road,
                 linewidth=road_width_base * mult,
-                alpha=1.0,
                 zorder=20,
             )
 
@@ -197,13 +220,11 @@ def render_city_map(
     ax.set_axis_off()
 
     fig.savefig(
-        out_png,
-        format="png",
-        dpi=spec.dpi,
-        bbox_inches="tight",
-        pad_inches=0,
+        out_svg,
+        format="svg",
     )
 
     plt.close(fig)
 
-    return RenderResult(output_png=out_png)
+    return RenderResult(output_svg=out_svg)
+
