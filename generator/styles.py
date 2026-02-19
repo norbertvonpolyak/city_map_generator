@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 
 # =============================================================================
@@ -32,7 +32,7 @@ DEFAULT_ROAD_STYLE = RoadStyle(
 @dataclass(frozen=True)
 class PaletteConfig:
     background: str
-    blocks: List[str]
+    blocks: Optional[List[str]]   # ← EZ lett Optional
     road: str
     water: str
     road_style: RoadStyle
@@ -43,7 +43,6 @@ class PaletteConfig:
 # =============================================================================
 
 WATER_LIGHT_BLUE = "#a9c9d8"
-WATER_LIGHT_BLUE_EDGE = "#a9c9d8"
 
 
 # =============================================================================
@@ -52,17 +51,12 @@ WATER_LIGHT_BLUE_EDGE = "#a9c9d8"
 
 PALETTES: Dict[str, PaletteConfig] = {
 
-    "warm": PaletteConfig(
-        background="#e6e0cf",
-        blocks=["#e28c41","#cd6d40","#e7b573","#e39f55","#c86a3d","#b55a3a","#9b4d37"],
-        road="#ffffff",
-        water="#5BA29D",
-        road_style=DEFAULT_ROAD_STYLE
-    ),
-
     "urban_modern": PaletteConfig(
         background="#D9D5C7",
-        blocks=["#E8891C","#D26A1E","#C65A2A","#E2C79F","#F0A21A","#7C7368","#2F2F2F"],
+        blocks=[
+            "#E8891C","#D26A1E","#C65A2A",
+            "#E2C79F","#F0A21A","#7C7368","#2F2F2F"
+        ],
         road="#FFFFFF",
         water="#5F9F9B",
         road_style=RoadStyle(
@@ -76,45 +70,46 @@ PALETTES: Dict[str, PaletteConfig] = {
         ),
     ),
 
-    "amber_district": PaletteConfig(
-        background="#e8e2d2",
-        blocks=["#2f2f33","#4a4a4a","#8c7a5b","#b89b5e","#d4b35f","#e2cfa4","#c76a3a"],
-        road="#ffffff",
-        water="#5BA29D",
-        road_style=DEFAULT_ROAD_STYLE,
-    ),
 
-    "white_minimal": PaletteConfig(
-        background="#f8f8f8",
-        blocks=["#ffffff"] * 7,
-        road="#2a2a2a",
-        water=WATER_LIGHT_BLUE,
+        "vintage_atlas": PaletteConfig(
+        background="#E6D3B3",
+        blocks=None,
+        road="#5C3D23",
+        water="#8FA6AA",
         road_style=RoadStyle(
-            base_width=1.3,
+            base_width=1.0,
             multipliers={
-                "minor": 0.7,
-                "local": 1.0,
-                "arterial": 1.8,
-                "highway": 2.8,
+                "minor": 0.5,
+                "local": 0.8,
+                "arterial": 1.4,
+                "highway": 1.9,
             },
         ),
     ),
+
+
+
+    # -------------------------------------------------------------------------
+    # NEW BLACK MINIMAL (BLOCK-FREE)
+    # -------------------------------------------------------------------------
 
     "black_minimal": PaletteConfig(
-        background="#000000",
-        blocks=["#000000"] * 7,
-        road="#ffffff",
-        water=WATER_LIGHT_BLUE,
-        road_style=RoadStyle(
-            base_width=1.3,
+        background="#0F0F10",
+        blocks=None,
+        road="#FFFFFF",
+        water="#CFC8B8",
+        road_style=RoadStyle (
+            base_width=1.4,
             multipliers={
-                "minor": 0.7,
-                "local": 1.0,
-                "arterial": 1.8,
-                "highway": 2.8,
+                "minor": 0.35,
+                "local": 0.7,
+                "arterial": 2.2,
+                "highway": 4.0,
             },
         ),
+
     ),
+
 }
 
 

@@ -15,6 +15,8 @@ from reportlab.graphics import renderPDF
 
 from svglib.svglib import svg2rlg
 
+from .layout_black_minimal import compose_black_minimal
+from .layout_vintage_atlas import compose_vintage_atlas_premium
 from generator.specs import ProductSpec
 
 
@@ -39,15 +41,49 @@ def compose_print_pdf(
     size_key: str,
     title: str,
     subtitle: str,
+    palette_name: str,
     font_path: Optional[str] = None,
 ) -> LayoutResult:
 
+
+    # ------------------------------------------------------------
+    # VINTAGE ATLAS:
+    # ------------------------------------------------------------
+    if palette_name == "vintage_atlas":
+        output_path = compose_vintage_atlas_premium (
+            spec=spec,
+            map_svg_path=map_svg_path,
+            output_dir=output_dir,
+            size_key=size_key,
+            title=title,
+            subtitle=subtitle,
+            palette_name=palette_name,
+            font_path=font_path,
+        )
+        return LayoutResult (output_pdf=output_path)
+
+    # ------------------------------------------------------------
+    # BLACK MINIMAL ROUTING (ISOLATED)
+    # ------------------------------------------------------------
+    if palette_name == "black_minimal":
+        output_path = compose_black_minimal(
+            spec=spec,
+            map_svg_path=map_svg_path,
+            output_dir=output_dir,
+            size_key=size_key,
+            title=title,
+            subtitle=subtitle,
+            palette_name=palette_name,
+            font_path=font_path,
+        )
+        return LayoutResult(output_pdf=output_path)
+
+    # ------------------------------------------------------------
+    # DEFAULT (URBAN MODERN) LAYOUT
+    # ------------------------------------------------------------
+
     width_pt = spec.width_cm * cm
     height_pt = spec.height_cm * cm
-
-    strip_height = 4 * cm
-    frame_thickness = 1 * cm
-    frame_color = colors.HexColor("#D9D5C7")
 
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     output_pdf = output_dir / f"citymap_{size_key}_{timestamp}.pdf"
@@ -55,7 +91,7 @@ def compose_print_pdf(
     c = canvas.Canvas(str(output_pdf), pagesize=(width_pt, height_pt))
 
     # ---------------------------------------------------------------------
-    # FONT (STABLE PROJECT-ROOT BASED LOADING)
+    # FONT
     # ---------------------------------------------------------------------
 
     project_root = Path(__file__).resolve().parents[1]
@@ -81,17 +117,17 @@ def compose_print_pdf(
     # FRAME OVERLAY (1cm sides & top, 4cm bottom)
     # ---------------------------------------------------------------------
 
-    frame_color = colors.HexColor ("#D9D5C7")
+    frame_color = colors.HexColor("#D9D5C7")
 
     left_margin = 1 * cm
     right_margin = 1 * cm
     top_margin = 1 * cm
     bottom_margin = 4 * cm
 
-    c.setFillColor (frame_color)
+    c.setFillColor(frame_color)
 
-    # Top bar
-    c.rect (
+    # Top
+    c.rect(
         0,
         height_pt - top_margin,
         width_pt,
@@ -100,8 +136,8 @@ def compose_print_pdf(
         fill=1,
     )
 
-    # Bottom bar
-    c.rect (
+    # Bottom
+    c.rect(
         0,
         0,
         width_pt,
@@ -110,8 +146,8 @@ def compose_print_pdf(
         fill=1,
     )
 
-    # Left bar
-    c.rect (
+    # Left
+    c.rect(
         0,
         bottom_margin,
         left_margin,
@@ -120,8 +156,8 @@ def compose_print_pdf(
         fill=1,
     )
 
-    # Right bar
-    c.rect (
+    # Right
+    c.rect(
         width_pt - right_margin,
         bottom_margin,
         right_margin,
@@ -131,30 +167,28 @@ def compose_print_pdf(
     )
 
     # ---------------------------------------------------------------------
-    # MAP SVG (VECTOR) – POSITIONED WITH FIXED MARGINS
+    # MAP SVG
     # ---------------------------------------------------------------------
 
-    drawing = svg2rlg (str (map_svg_path))
+    drawing = svg2rlg(str(map_svg_path))
 
-    left_margin = 1 * cm
-    bottom_margin = 4 * cm
-
-    renderPDF.draw (
-         drawing,
-         c,
-         left_margin,
-         bottom_margin,
+    renderPDF.draw(
+        drawing,
+        c,
+        left_margin,
+        bottom_margin,
     )
 
     # ---------------------------------------------------------------------
-    # TITLE + SUBTITLE (BLOCK CENTERED)
+    # TITLE + SUBTITLE
     # ---------------------------------------------------------------------
 
+    strip_height = 4 * cm
+    frame_thickness = 1 * cm
     right_inner_edge = width_pt - frame_thickness
 
     title_font_size = 48
     subtitle_font_size = 17
-
     spacing = subtitle_font_size * 0.3
 
     block_height = title_font_size + spacing + subtitle_font_size
@@ -164,7 +198,6 @@ def compose_print_pdf(
     subtitle_y = block_bottom_y
     title_y = subtitle_y + subtitle_font_size + spacing
 
-    # WIDTH CALCULATION
     title_width = pdfmetrics.stringWidth(
         title, title_font_name, title_font_size
     )
@@ -180,15 +213,12 @@ def compose_print_pdf(
     title_x = right_inner_edge - title_width
     subtitle_x = right_inner_edge - subtitle_width
 
-    # TITLE STYLE
+    # Title
     c.setFillColor(colors.HexColor("#4E4E4E"))
-    c.setStrokeColor(colors.HexColor("#9B978B"))
-    c.setLineWidth(0.9)
-
     c.setFont(title_font_name, title_font_size)
     c.drawString(title_x, title_y, title)
 
-    # SUBTITLE WITH TRACKING
+    # Subtitle with tracking
     def draw_tracked_string(
         canvas,
         text,

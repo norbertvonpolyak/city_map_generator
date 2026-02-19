@@ -32,11 +32,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--center-lon", type=float,
                    default=4.8982369032362545)
 
-    p.add_argument("--palette", default="urban_modern")
+    p.add_argument("--palette", default="vintage_atlas")
     p.add_argument("--seed", type=int, default=42)
 
     p.add_argument("--title", type=str,
-                   default="WASHINGTON D.C.")
+                   default="AMSTERDAM")
 
     p.add_argument("--subtitle", type=str,
                    default=None)
@@ -122,13 +122,14 @@ def main() -> None:
         else format_short_coords(args.center_lat, args.center_lon)
     )
 
-    layout_result = compose_print_pdf(
+    layout_result = compose_print_pdf (
         spec=spec,
         map_svg_path=map_svg_path,
         output_dir=args.output_dir,
         size_key=args.size_key,
         title=args.title,
         subtitle=subtitle_text,
+        palette_name=args.palette,  # ← EZ FONTOS
         font_path=args.font_path,
     )
 

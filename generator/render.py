@@ -156,21 +156,22 @@ def render_city_map(
     # ------------------------------------------------------------
 
     boundary = clip_rect.boundary
-    merged = unary_union(list(edges_p.geometry) + [boundary])
-    polygons = list(polygonize(merged))
+    merged = unary_union (list (edges_p.geometry) + [boundary])
+    polygons = list (polygonize (merged))
 
-    blocks_gdf = gpd.GeoDataFrame(geometry=polygons, crs=edges_p.crs)
-    blocks_gdf = gpd.clip(blocks_gdf, gpd.GeoSeries([clip_rect], crs=blocks_gdf.crs))
+    blocks_gdf = gpd.GeoDataFrame (geometry=polygons, crs=edges_p.crs)
+    blocks_gdf = gpd.clip (blocks_gdf, gpd.GeoSeries ([clip_rect], crs=blocks_gdf.crs))
 
     # Remove water from blocks
-    if water_p is not None and len(water_p) > 0:
+    if water_p is not None and len (water_p) > 0:
         water_union = water_p.unary_union
-        blocks_gdf["geometry"] = blocks_gdf.geometry.difference(water_union)
+        blocks_gdf ["geometry"] = blocks_gdf.geometry.difference (water_union)
 
-    if len(blocks_gdf) > 0:
-        blocks_gdf["color"] = np.random.choice(
+    # Assign random colors ONLY if palette has blocks
+    if palette_cfg.blocks and len (blocks_gdf) > 0:
+        blocks_gdf ["color"] = np.random.choice (
             palette_cfg.blocks,
-            size=len(blocks_gdf)
+            size=len (blocks_gdf)
         )
 
     # ------------------------------------------------------------
@@ -192,11 +193,11 @@ def render_city_map(
             zorder=1,
         )
 
-    # Blocks
-    if len(blocks_gdf) > 0:
-        blocks_gdf.plot(
+    # Blocks (only if palette defines them)
+    if palette_cfg.blocks and len (blocks_gdf) > 0:
+        blocks_gdf.plot (
             ax=ax,
-            color=blocks_gdf["color"],
+            color=blocks_gdf ["color"],
             linewidth=0,
             zorder=5,
         )
