@@ -1,23 +1,59 @@
-# City Map Generator
+# 🗺️ City Map Generator
 
-A **City Map Generator** egy Python-alapú, OpenStreetMap (OSM) adatokra épülő, nyomdai minőségű várostérkép-renderelő rendszer.  
+![Python](https://img.shields.io/badge/Python-3.11-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-Backend-009688)
+![React](https://img.shields.io/badge/React-Frontend-61DAFB)
+![OSMnx](https://img.shields.io/badge/OSMnx-2.x-green)
+![Matplotlib](https://img.shields.io/badge/Matplotlib-Render-orange)
+![ReportLab](https://img.shields.io/badge/ReportLab-PDF-red)
+![License](https://img.shields.io/badge/License-MIT-lightgrey)
 
-A projekt célja egy determinisztikus, minimalista és termékorientált térképgenerátor, amely poszterekhez, faliképekhez és webshopos termékekhez készít print-ready PDF kimenetet.
+A **City Map Generator** egy Python-alapú, OpenStreetMap (OSM) adatokra épülő, nyomdai minőségű várostérkép-renderelő rendszer.
 
-A rendszer logikai lánca:
+A projekt célja egy determinisztikus, minimalista és termékorientált térképgenerátor, amely:
 
-**cm → arány → render → layout → gyártás**
+- 🖨️ Print-ready PDF fájlokat generál
+- 🌐 Élő webes preview-t biztosít
+- 🧠 Determinisztikus seed-alapú renderelést használ
+- 🏗️ Teljesen szétválasztja a render és layout réteget
+- 🛒 Webshop-integrációra optimalizált architektúrát követ
 
 ---
 
-# 🎯 Projekt fókusz
+# 🏗️ Architecture
 
-- Letisztult vizuális stílus
-- Determinisztikus renderelés
-- OSM adatok intelligens feldolgozása
-- Skálázható termékméretek (cm → arány → vonalvastagság)
-- Layout és render teljes szétválasztása
-- Nyomdai minőségű PDF export
+```
+React Frontend
+        ↓
+   FastAPI Backend
+        ↓
+     OSMnx
+        ↓
+ Matplotlib Render
+        ↓
+ ReportLab Layout
+        ↓
+   Print-ready PDF
+```
+
+A projekt két külön repository-ban működik:
+
+- `city_map_generator` – Python backend
+- `city-map-frontend` – React konfigurátor
+
+---
+
+# 🎯 Core Philosophy
+
+```
+cm → arány → render → layout → gyártás
+```
+
+- Centiméter-alapú méretlogika
+- Determinisztikus vizuális output
+- Layout és térkép teljes függetlensége
+- Print-grade PDF export
+- Skálázható webshop pipeline
 
 ---
 
@@ -25,11 +61,11 @@ A rendszer logikai lánca:
 
 ## 🧱 Polygonize-alapú várostömb generálás
 
-Az OSM úthálózatból automatikusan képzett city block struktúra.
-
 - OSMnx 2.x kompatibilis pipeline
-- Polygonize-alapú tömbképzés
-- Determinisztikus blokkszínezés seed alapján
+- `graph_from_point`
+- `polygonize` alapú tömbképzés
+- Bounding box alapú clipping
+- Seed-alapú determinisztikus blokkszínezés
 
 ---
 
@@ -37,29 +73,31 @@ Az OSM úthálózatból automatikusan képzett city block struktúra.
 
 Úthierarchia:
 
-- Motorway
+- Highway
 - Arterial
 - Local
 - Minor
 
-A vastagság három komponensből áll:
+Vastagság képlete:
 
-### 1. Globális alap
-- `road_width`
-- `road_boost`
+1. `base_width`
+2. `multipliers[class]`
+3. Extent-alapú skálázás
 
-### 2. Úttípus-szorzók
-- `lw_highway_mult`
-- `lw_arterial_mult`
-- `lw_local_mult`
-- `lw_minor_mult`
-
-### 3. Automatikus skálázás térképkiterjedés alapján
-`_scaled_linewidth()` biztosítja az arányos vizuális hierarchiát minden méretben.
+Ez biztosítja a vizuális konzisztenciát minden méretben.
 
 ---
 
-## 🚫 Nem kívánt OSM útvonalak kizárása
+## 🌊 Vízkezelés
+
+- `natural=water` OSM lekérés
+- Projektált CRS-ben clipping
+- Blokkokból kivonás (`difference`)
+- Palette-specifikus vízszín
+
+---
+
+## 🚫 Nem kívánt OSM elemek kizárása
 
 Alapértelmezetten nem kerülnek renderelésre:
 
@@ -70,72 +108,102 @@ Alapértelmezetten nem kerülnek renderelésre:
 - `steps`
 - `bridleway`
 
-Ez megszünteti az OSM-eredetű párhuzamos „szőrös” vonalakat.
-
-```python
-draw_non_vehicular = False  # default
-
-```
+Ez megszünteti az OSM zajt és párhuzamos vonalakat.
 
 ---
 
 # 🎨 Stílusrendszer
 
-A projekt egyetlen „source of truth”-ja a **MonoStyle**.
+Központi konfiguráció:
 
 ```python
-from generator.styles import MonoStyle, DEFAULT_MONO
+from generator.styles import get_palette_config
 
-style = DEFAULT_MONO
+palette = get_palette_config("urban_modern")
 ```
 
-- Nincs runtime JSON betöltés
-- Nincs preset varázslás
-- Teljesen verziózható
-- Diffelhető
-- Determinisztikus
+Elérhető paletták például:
+
+- `urban_modern`
+- `vintage_atlas`
+- `black_minimal`
 
 Konfigurálható:
 
+- háttérszín
 - blokkszínek
-- útszín
 - vízszín
-- úthierarchia vastagság
-- alsó strip tipográfia
+- útszín
+- road_style (base_width + multipliers)
+
+Teljesen verziózható és determinisztikus.
 
 ---
 
-# 🖨️ Kétlépcsős architektúra
+# 🌐 FastAPI Preview API
 
-A rendszer szigorúan szétválasztja a renderelést és a kompozíciót.
+## Endpoint
 
-## 1️⃣ Map Layer Render  
-**matplotlib → PNG**
+```
+POST /preview
+```
 
-- Térkép réteg generálása  
-- Determinisztikus seed  
-- DPI-alapú skálázás  
+## Payload példa
 
-## 2️⃣ Print Composition  
-**ReportLab → PDF**
+```json
+{
+  "lat": 48.1351,
+  "lon": 11.5820,
+  "size_key": "30x40",
+  "extent_m": 2000,
+  "palette": "urban_modern"
+}
+```
 
-- Fix cm-alapú alsó strip  
-- Jobbra zárt cím  
-- Subtitle külön betűstílussal  
-- Bal oldali logó támogatás  
-- Egységes vékony keret minden oldalon  
-- Timestampelt fájlnév  
-- Méretazonosító a fájlnévben  
+## Response
 
-Ez biztosítja a layout és a térkép teljes függetlenségét.
+```
+image/png
+```
+
+Lehetővé teszi:
+
+- Élő React preview
+- Méretváltás
+- Palettaváltás
+- Dinamikus térképkiterjedés
 
 ---
 
-# 📐 Termékméret-független renderelés
+# 🖨️ Two-Step Rendering Architecture
 
-Minden méret egységes logika mentén készül:
+## 1️⃣ Map Layer (Matplotlib → PNG)
 
-**cm → arány → DPI → pontos nyomdai PDF méret**
+- Determinisztikus seed
+- DPI-aware render
+- Full-bleed axes
+- Optional SVG export
+
+## 2️⃣ Print Composition (ReportLab → PDF)
+
+- Fix cm-alapú keret
+- 1cm oldalsó + felső margin
+- 4cm alsó strip
+- Jobbra zárt cím
+- Subtitle tracking
+- Logó támogatás
+- Timestampelt fájlnév
+- Méretazonosító a fájlnévben
+
+---
+
+# 📐 Méretlogika
+
+Minden méret az alábbi logika szerint:
+
+```
+cm → arány → extent_m → DPI → pontos nyomdai PDF
+```
 
 Példa kimenet:
 
@@ -145,7 +213,7 @@ citymap_50x70_2026-02-16_21-45-12.pdf
 
 ---
 
-# 🧭 Használat (CLI)
+# 🧭 CLI Használat
 
 ## Alap futtatás
 
@@ -153,32 +221,21 @@ citymap_50x70_2026-02-16_21-45-12.pdf
 python main.py \
   --center-lat 47.4979 \
   --center-lon 19.0402 \
-  --width-cm 50 \
-  --height-cm 70 \
+  --size-key 50x70 \
+  --extent-m 3000 \
+  --palette urban_modern \
   --output-dir output/
-```
-
-## Monochrome render (baseline)
-
-```python
-result = render_city_map_monochrome(
-    center_lat=...,
-    center_lon=...,
-    spec=spec,
-    output_dir=output_dir,
-    zoom=1.0,
-    preset_name="snazzy_bw_blackwater",
-    draw_non_vehicular=False,
-)
 ```
 
 ---
 
-# 🧱 Projektstruktúra
+# 📦 Projektstruktúra (Backend)
 
 ```
 city_map_generator/
 │
+├── api.py
+├── service.py
 ├── main.py
 ├── requirements.txt
 │
@@ -197,60 +254,86 @@ city_map_generator/
 
 ---
 
-# 🔒 Projektállapot
+# 📦 Projektstruktúra (Frontend)
 
-- Stabil monochrome baseline a `main` branch-ben  
-- Aktív fejlesztés webshop-integráció irányába  
-- Determinisztikus render biztosított  
-- Layout és render réteg teljesen szétválasztva  
+```
+city-map-frontend/
+│
+├── src/
+│   ├── components/
+│   ├── pages/
+│   ├── layout/
+│   ├── config/
+│   ├── App.jsx
+│   └── main.jsx
+│
+├── tailwind.config.js
+├── postcss.config.js
+└── vite.config.js
+```
 
 ---
 
 # 🚀 Roadmap
 
-## 🎯 1. SVG / DXF export
+## 1. SVG / DXF Export
 
-Vektoros kimenet gyártáshoz:
+- Lézervágás
+- Gravírozás
+- CNC támogatás
 
-- Lézervágás  
-- Gravírozás  
-- CNC workflow támogatás  
-
-## 🛒 2. Webshop-integráció
+## 2. Webshop Integráció
 
 Frontend:
 
-- Térképpont kiválasztás  
-- Élő preview  
-- Méretválasztás  
+- Térképpont kiválasztás
+- Élő preview
+- Méret- és palettaválasztás
 
 Backend:
 
-- Automatikus PDF generálás  
-- Gyártási fájl generálás  
-- Privát gyártói hozzáférés  
+- Automatikus PDF generálás
+- Gyártási fájl export
+- Privát gyártói endpoint
 
-## 🌊 3. Coastline-aware framing
+## 3. Coastline-aware Framing
 
-- Snap-to-land logika  
-- Intelligens center korrekció  
-- Kompozíciós optimalizálás  
+- Snap-to-land logika
+- Intelligens center korrekció
+- Kompozíciós optimalizálás
 
-## 🧭 4. Kompozíciós preset rendszer
+## 4. Méretfüggő tipográfia
 
-- Minimal logo-free edition  
-- Centered title  
-- Editorial layout  
-- Premium edition  
+- Dinamikus font scaling
+- Kis méret optimalizálás
+- Nyomdai balansz finomítás
 
-## 📐 5. Méretfüggő tipográfia
+---
 
-- Dinamikus font scaling  
-- 30×40 cm alatti optimalizálás  
-- Nyomdai vizuális balansz finomítása  
+# 🔒 Projektállapot
+
+- Stabil render pipeline
+- Preview API működik
+- React konfigurátor integrálva
+- Layout és render teljesen szétválasztva
+- Determinisztikus output biztosított
 
 ---
 
 # 👤 Author
 
 **Norbert von Polyák**
+
+---
+
+# 🧠 Vision
+
+A cél nem pusztán egy térképgenerátor, hanem egy:
+
+- Determinisztikus
+- Skálázható
+- Nyomdai minőségű
+- Webshop-integrálható
+- Architekturálisan tiszta
+
+térképprodukciós rendszer.
