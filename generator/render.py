@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime
-from pathlib import Path
+import matplotlib
+matplotlib.use("Agg")  # Backend safe for FastAPI
+
 from typing import Optional
+from pathlib import Path
 import random
 import math
 
@@ -11,6 +12,7 @@ import geopandas as gpd
 import matplotlib.pyplot as plt
 import numpy as np
 import osmnx as ox
+
 from shapely.geometry import Point, box
 from shapely.ops import polygonize, unary_union
 
@@ -19,21 +21,8 @@ from generator.styles import get_palette_config
 
 
 # =============================================================================
-# RESULT
-# =============================================================================
-
-@dataclass(frozen=True)
-class RenderResult:
-    output_svg: Optional[Path] = None
-
-
-# =============================================================================
 # HELPERS
 # =============================================================================
-
-def _safe_timestamp() -> str:
-    return datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-
 
 def _classify_road(hw: str) -> str:
     hw = str(hw)
@@ -48,7 +37,7 @@ def _classify_road(hw: str) -> str:
 
 
 # =============================================================================
-# MAIN RENDER (SVG + PHYSICAL OVERSCAN)
+# MAIN RENDER
 # =============================================================================
 
 def render_city_map(
@@ -56,11 +45,15 @@ def render_city_map(
     center_lat: float,
     center_lon: float,
     spec: ProductSpec,
-    output_dir: Path,
+    output_dir: Optional[Path] = None,   # optional!
     palette_name: str,
     seed: int = 42,
     filename_prefix: str = "map_layer",
-) -> RenderResult:
+) -> plt.Figure:
+    """
+    Always returns a matplotlib Figure.
+    If output_dir is provided, also saves SVG.
+    """
 
     random.seed(seed)
     np.random.seed(seed)
@@ -71,37 +64,23 @@ def render_city_map(
     # INNER MAP AREA (1cm sides + 1cm top + 4cm bottom reserved)
     # ------------------------------------------------------------
 
-    inner_width_cm = spec.width_cm - 2       # 1cm left + 1cm right
-    inner_height_cm = spec.height_cm - 5     # 1cm top + 4cm bottom
+    inner_width_cm = spec.width_cm - 2
+    inner_height_cm = spec.height_cm - 5
 
     fig_w_in = inner_width_cm / 2.54
     fig_h_in = inner_height_cm / 2.54
-
-    # ------------------------------------------------------------
-    # MAP ASPECT RATIO BASED ON INNER AREA
-    # ------------------------------------------------------------
 
     inner_ratio = inner_width_cm / inner_height_cm
 
     half_height_m = spec.extent_m
     half_width_m = half_height_m * inner_ratio
 
-    # ------------------------------------------------------------
-    # DISTANCE FOR OSM QUERY
-    # ------------------------------------------------------------
-
     dist_m = int(
-        math.ceil(
-            math.sqrt(half_width_m**2 + half_height_m**2)
-        )
+        math.ceil(math.sqrt(half_width_m**2 + half_height_m**2))
     ) + 300
 
-    ts = _safe_timestamp()
-    output_dir.mkdir(parents=True, exist_ok=True)
-    out_svg = output_dir / f"{filename_prefix}_{ts}.svg"
-
     # ------------------------------------------------------------
-    # CENTER + BBOX
+    # CENTER + CLIP BBOX
     # ------------------------------------------------------------
 
     center = gpd.GeoDataFrame(
@@ -119,7 +98,7 @@ def render_city_map(
     clip_rect = box(minx, miny, maxx, maxy)
 
     # ------------------------------------------------------------
-    # GRAPH
+    # ROAD GRAPH
     # ------------------------------------------------------------
 
     G = ox.graph_from_point(
@@ -156,30 +135,31 @@ def render_city_map(
     # ------------------------------------------------------------
 
     boundary = clip_rect.boundary
-    merged = unary_union (list (edges_p.geometry) + [boundary])
-    polygons = list (polygonize (merged))
+    merged = unary_union(list(edges_p.geometry) + [boundary])
+    polygons = list(polygonize(merged))
 
-    blocks_gdf = gpd.GeoDataFrame (geometry=polygons, crs=edges_p.crs)
-    blocks_gdf = gpd.clip (blocks_gdf, gpd.GeoSeries ([clip_rect], crs=blocks_gdf.crs))
+    blocks_gdf = gpd.GeoDataFrame(geometry=polygons, crs=edges_p.crs)
+    blocks_gdf = gpd.clip(
+        blocks_gdf,
+        gpd.GeoSeries([clip_rect], crs=blocks_gdf.crs)
+    )
 
-    # Remove water from blocks
-    if water_p is not None and len (water_p) > 0:
+    if water_p is not None and len(water_p) > 0:
         water_union = water_p.unary_union
-        blocks_gdf ["geometry"] = blocks_gdf.geometry.difference (water_union)
+        blocks_gdf["geometry"] = blocks_gdf.geometry.difference(water_union)
 
-    # Assign random colors ONLY if palette has blocks
-    if palette_cfg.blocks and len (blocks_gdf) > 0:
-        blocks_gdf ["color"] = np.random.choice (
+    if palette_cfg.blocks and len(blocks_gdf) > 0:
+        blocks_gdf["color"] = np.random.choice(
             palette_cfg.blocks,
-            size=len (blocks_gdf)
+            size=len(blocks_gdf)
         )
 
     # ------------------------------------------------------------
-    # PLOT (FULL-BLEED AXES, NO MARGINS)
+    # PLOT
     # ------------------------------------------------------------
 
     fig = plt.figure(figsize=(fig_w_in, fig_h_in))
-    ax = fig.add_axes([0, 0, 1, 1])  # full bleed
+    ax = fig.add_axes([0, 0, 1, 1])
 
     fig.patch.set_facecolor(palette_cfg.background)
     ax.set_facecolor(palette_cfg.background)
@@ -193,11 +173,11 @@ def render_city_map(
             zorder=1,
         )
 
-    # Blocks (only if palette defines them)
-    if palette_cfg.blocks and len (blocks_gdf) > 0:
-        blocks_gdf.plot (
+    # Blocks
+    if palette_cfg.blocks and len(blocks_gdf) > 0:
+        blocks_gdf.plot(
             ax=ax,
-            color=blocks_gdf ["color"],
+            color=blocks_gdf["color"],
             linewidth=0,
             zorder=5,
         )
@@ -220,12 +200,10 @@ def render_city_map(
     ax.set_ylim(miny, maxy)
     ax.set_axis_off()
 
-    fig.savefig(
-        out_svg,
-        format="svg",
-    )
+    # Optional SVG save (CLI use-case)
+    if output_dir is not None:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        svg_path = output_dir / f"{filename_prefix}.svg"
+        fig.savefig(svg_path, format="svg")
 
-    plt.close(fig)
-
-    return RenderResult(output_svg=out_svg)
-
+    return fig
