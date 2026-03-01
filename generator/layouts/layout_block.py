@@ -14,9 +14,6 @@ from reportlab.lib.utils import ImageReader
 from reportlab.graphics import renderPDF
 
 from svglib.svglib import svg2rlg
-
-from .layout_black_minimal import compose_black_minimal
-from .layout_vintage_atlas import compose_vintage_atlas_premium
 from generator.specs import ProductSpec
 
 
@@ -30,10 +27,10 @@ class LayoutResult:
 
 
 # =============================================================================
-# MAIN COMPOSER
+# BLOCK LAYOUT (ENGINE-BASED)
 # =============================================================================
 
-def compose_print_pdf(
+def compose_layout_block(
     *,
     spec: ProductSpec,
     map_svg_path: Path,
@@ -45,62 +42,22 @@ def compose_print_pdf(
     font_path: Optional[str] = None,
 ) -> LayoutResult:
 
-
-    # ------------------------------------------------------------
-    # VINTAGE ATLAS:
-    # ------------------------------------------------------------
-    if palette_name == "vintage_atlas":
-        output_path = compose_vintage_atlas_premium (
-            spec=spec,
-            map_svg_path=map_svg_path,
-            output_dir=output_dir,
-            size_key=size_key,
-            title=title,
-            subtitle=subtitle,
-            palette_name=palette_name,
-            font_path=font_path,
-        )
-        return LayoutResult (output_pdf=output_path)
-
-    # ------------------------------------------------------------
-    # BLACK MINIMAL ROUTING (ISOLATED)
-    # ------------------------------------------------------------
-    if palette_name == "black_minimal":
-        output_path = compose_black_minimal(
-            spec=spec,
-            map_svg_path=map_svg_path,
-            output_dir=output_dir,
-            size_key=size_key,
-            title=title,
-            subtitle=subtitle,
-            palette_name=palette_name,
-            font_path=font_path,
-        )
-        return LayoutResult(output_pdf=output_path)
-
-    # ------------------------------------------------------------
-    # DEFAULT (URBAN MODERN) LAYOUT
-    # ------------------------------------------------------------
-
     width_pt = spec.width_cm * cm
     height_pt = spec.height_cm * cm
 
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    output_pdf = output_dir / f"citymap_{size_key}_{timestamp}.pdf"
+    output_pdf = output_dir / f"{palette_name}_{size_key}_{timestamp}.pdf"
 
     c = canvas.Canvas(str(output_pdf), pagesize=(width_pt, height_pt))
 
     # ---------------------------------------------------------------------
-    # FONT
+    # FONT SETUP
     # ---------------------------------------------------------------------
 
-    project_root = Path(__file__).resolve().parents[1]
+    project_root = Path(__file__).resolve().parents[2]
     default_font_path = project_root / "Fonts" / "Monoton-Regular.ttf"
 
-    if font_path:
-        font_candidate = Path(font_path)
-    else:
-        font_candidate = default_font_path
+    font_candidate = Path(font_path) if font_path else default_font_path
 
     if font_candidate.exists():
         pdfmetrics.registerFont(
@@ -108,13 +65,12 @@ def compose_print_pdf(
         )
         title_font_name = "MonotonCustom"
     else:
-        print("⚠ Monoton font not found, fallback to Helvetica")
         title_font_name = "Helvetica"
 
     subtitle_font_name = "Helvetica-Bold"
 
     # ---------------------------------------------------------------------
-    # FRAME OVERLAY (1cm sides & top, 4cm bottom)
+    # FRAME (1cm sides/top, 4cm bottom)
     # ---------------------------------------------------------------------
 
     frame_color = colors.HexColor("#D9D5C7")
@@ -127,24 +83,10 @@ def compose_print_pdf(
     c.setFillColor(frame_color)
 
     # Top
-    c.rect(
-        0,
-        height_pt - top_margin,
-        width_pt,
-        top_margin,
-        stroke=0,
-        fill=1,
-    )
+    c.rect(0, height_pt - top_margin, width_pt, top_margin, stroke=0, fill=1)
 
     # Bottom
-    c.rect(
-        0,
-        0,
-        width_pt,
-        bottom_margin,
-        stroke=0,
-        fill=1,
-    )
+    c.rect(0, 0, width_pt, bottom_margin, stroke=0, fill=1)
 
     # Left
     c.rect(
@@ -170,22 +112,31 @@ def compose_print_pdf(
     # MAP SVG
     # ---------------------------------------------------------------------
 
-    drawing = svg2rlg(str(map_svg_path))
+    drawing = svg2rlg (str (map_svg_path))
 
-    renderPDF.draw(
-        drawing,
-        c,
-        left_margin,
-        bottom_margin,
-    )
+    inner_width = width_pt - (left_margin + right_margin)
+    inner_height = height_pt - (top_margin + bottom_margin)
+
+    scale_x = inner_width / drawing.width
+    scale_y = inner_height / drawing.height
+    scale = min (scale_x, scale_y)
+
+    drawing.scale (scale, scale)
+
+    scaled_width = drawing.width * scale
+    scaled_height = drawing.height * scale
+
+    offset_x = left_margin + (inner_width - scaled_width) / 2
+    offset_y = bottom_margin + (inner_height - scaled_height) / 2
+
+    renderPDF.draw (drawing, c, offset_x, offset_y)
 
     # ---------------------------------------------------------------------
     # TITLE + SUBTITLE
     # ---------------------------------------------------------------------
 
     strip_height = 4 * cm
-    frame_thickness = 1 * cm
-    right_inner_edge = width_pt - frame_thickness
+    right_inner_edge = width_pt - right_margin
 
     title_font_size = 48
     subtitle_font_size = 17
@@ -203,9 +154,11 @@ def compose_print_pdf(
     )
 
     tracking_value = 1.5
+
     raw_sub_width = pdfmetrics.stringWidth(
         subtitle.upper(), subtitle_font_name, subtitle_font_size
     )
+
     subtitle_width = raw_sub_width + (
         len(subtitle) - 1
     ) * tracking_value
@@ -254,7 +207,6 @@ def compose_print_pdf(
     logo_path = project_root / "Logo" / "dotty_map_logo.png"
 
     if logo_path.exists():
-
         logo = ImageReader(str(logo_path))
         logo_original_width, logo_original_height = logo.getSize()
 
@@ -263,7 +215,7 @@ def compose_print_pdf(
             logo_original_width / logo_original_height
         )
 
-        logo_x = frame_thickness
+        logo_x = left_margin
         logo_y = (strip_height / 2) - (logo_height / 2)
 
         c.drawImage(

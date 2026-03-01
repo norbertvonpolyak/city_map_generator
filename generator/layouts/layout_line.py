@@ -13,9 +13,11 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.graphics import renderPDF
 from reportlab.lib.utils import ImageReader
 from svglib.svglib import svg2rlg
-from generator.styles import get_palette_config
 
-def compose_black_minimal(
+from generator.styles import get_style_config, LineStyleConfig
+
+
+def compose_layout_line(
     *,
     spec,
     map_svg_path: Path,
@@ -28,6 +30,17 @@ def compose_black_minimal(
 ):
 
     # ============================================================
+    # STYLE VALIDATION
+    # ============================================================
+
+    style_cfg = get_style_config(palette_name)
+
+    if not isinstance(style_cfg, LineStyleConfig):
+        raise TypeError(
+            f"Style '{palette_name}' is not line-based."
+        )
+
+    # ============================================================
     # PAGE SETUP
     # ============================================================
 
@@ -36,16 +49,16 @@ def compose_black_minimal(
     frame = 1 * cm
 
     timestamp = datetime.now().strftime("%y%m%d_%H%M")
+    output_dir.mkdir(parents=True, exist_ok=True)
     output_pdf = output_dir / f"{palette_name}_{size_key}_{timestamp}.pdf"
 
     c = canvas.Canvas(str(output_pdf), pagesize=(width_pt, height_pt))
 
-    # --- FRAME COLOR ---
-    palette_cfg = get_palette_config (palette_name)
-    frame_color = colors.HexColor (palette_cfg.water)
+    # --- FRAME COLOR (outer border) ---
+    frame_color = colors.HexColor(style_cfg.water)
 
-    c.setFillColor (frame_color)
-    c.rect (0, 0, width_pt, height_pt, fill=1, stroke=0)
+    c.setFillColor(frame_color)
+    c.rect(0, 0, width_pt, height_pt, fill=1, stroke=0)
 
     # --- INNER AREA ---
     inner_x = frame
@@ -53,18 +66,20 @@ def compose_black_minimal(
     inner_w = width_pt - 2 * frame
     inner_h = height_pt - 2 * frame
 
-    inner_bg_color = colors.HexColor (palette_cfg.background)
+    inner_bg_color = colors.HexColor(style_cfg.background)
 
-    c.setFillColor (inner_bg_color)
-    c.rect (inner_x, inner_y, inner_w, inner_h, fill=1, stroke=0)
+    c.setFillColor(inner_bg_color)
+    c.rect(inner_x, inner_y, inner_w, inner_h, fill=1, stroke=0)
 
     # ============================================================
-    # MAP
+    # MAP (SVG → PDF)
     # ============================================================
 
     drawing = svg2rlg(str(map_svg_path))
+
     scale_x = inner_w / drawing.width
     scale_y = inner_h / drawing.height
+
     drawing.scale(scale_x, scale_y)
     drawing.width *= scale_x
     drawing.height *= scale_y
@@ -144,13 +159,9 @@ def compose_black_minimal(
     bottom_zone_height = inner_h * bottom_zone_ratio
     bottom_zone_center_y = inner_y + (bottom_zone_height / 2)
 
-    # FIX 1 cm sortáv
     subtitle_gap = 1 * cm
 
-    # teljes blokk magasság
     text_block_height = title_size + subtitle_gap
-
-    # blokk középre igazítva a bottom zone-ban
     block_bottom_y = bottom_zone_center_y - (text_block_height / 2)
 
     subtitle_y = block_bottom_y

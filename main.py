@@ -10,8 +10,7 @@ from generator.specs import (
     validate_size_key_for_product_line,
 )
 
-from generator.render import render_city_map
-from generator.layout_composer import compose_print_pdf
+from generator.core.render_dispatcher import render_product
 
 
 # =============================================================================
@@ -87,53 +86,27 @@ def main() -> None:
         dpi=args.dpi,
     )
 
-    print("--------------------------------------------------")
-    print("B Architecture Active")
-    print("Step 1: Rendering map layer (SVG)")
-    print("--------------------------------------------------")
-
-    # -------------------------------------------------------------------------
-    # STEP 1 – MAP LAYER (SVG)
-    # -------------------------------------------------------------------------
-
-    map_layer_result = render_city_map(
-        center_lat=args.center_lat,
-        center_lon=args.center_lon,
-        spec=spec,
-        output_dir=args.output_dir,
-        palette_name=args.palette,
-        seed=args.seed,
-    )
-
-    map_svg_path = map_layer_result.output_svg
-    print("Map layer SVG:", map_svg_path)
-
-    # -------------------------------------------------------------------------
-    # STEP 2 – FINAL PRINT PDF
-    # -------------------------------------------------------------------------
-
-    print("--------------------------------------------------")
-    print("Step 2: Composing final print PDF")
-    print("--------------------------------------------------")
+    print ("--------------------------------------------------")
+    print ("Rendering product via style dispatcher")
+    print ("--------------------------------------------------")
 
     subtitle_text = (
         args.subtitle
         if args.subtitle
-        else format_short_coords(args.center_lat, args.center_lon)
+        else format_short_coords (args.center_lat, args.center_lon)
     )
 
-    layout_result = compose_print_pdf (
+    final_pdf = render_product (
+        style_name=args.palette,
+        center_lat=args.center_lat,
+        center_lon=args.center_lon,
         spec=spec,
-        map_svg_path=map_svg_path,
         output_dir=args.output_dir,
-        size_key=args.size_key,
         title=args.title,
         subtitle=subtitle_text,
-        palette_name=args.palette,  # ← EZ FONTOS
-        font_path=args.font_path,
     )
 
-    print("Final PDF:", layout_result.output_pdf)
+    print ("Final PDF:", final_pdf)
 
     total_end = time.perf_counter()
     print(f"Total time : {total_end - total_start:.2f} seconds")

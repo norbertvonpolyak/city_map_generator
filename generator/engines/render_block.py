@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import matplotlib
-matplotlib.use("Agg")  # Backend safe for FastAPI
+matplotlib.use("Agg")
 
+from dataclasses import dataclass
 from typing import Optional
 from pathlib import Path
+
 import random
 import math
 
@@ -17,7 +19,16 @@ from shapely.geometry import Point, box
 from shapely.ops import polygonize, unary_union
 
 from generator.specs import ProductSpec
-from generator.styles import get_palette_config
+from generator.styles import get_style_config, BlockStyleConfig
+
+
+# =============================================================================
+# RESULT TYPE
+# =============================================================================
+
+@dataclass(frozen=True)
+class MapLayerResult:
+    output_svg: Optional[Path]
 
 
 # =============================================================================
@@ -37,32 +48,33 @@ def _classify_road(hw: str) -> str:
 
 
 # =============================================================================
-# MAIN RENDER
+# BLOCK-BASED ENGINE
 # =============================================================================
 
-def render_city_map(
+def render_map_block(
     *,
     center_lat: float,
     center_lon: float,
     spec: ProductSpec,
-    output_dir: Optional[Path] = None,   # optional!
+    output_dir: Optional[Path] = None,
     palette_name: str,
     seed: int = 42,
     filename_prefix: str = "map_layer",
-) -> plt.Figure:
-    """
-    Always returns a matplotlib Figure.
-    If output_dir is provided, also saves SVG.
-    """
+) -> MapLayerResult:
 
     random.seed(seed)
     np.random.seed(seed)
 
-    palette_cfg = get_palette_config(palette_name)
+    style_cfg = get_style_config(palette_name)
 
-    # ------------------------------------------------------------
-    # INNER MAP AREA (1cm sides + 1cm top + 4cm bottom reserved)
-    # ------------------------------------------------------------
+    if not isinstance(style_cfg, BlockStyleConfig):
+        raise TypeError(
+            f"Style '{palette_name}' is not block-based."
+        )
+
+    # -------------------------------------------------------------------------
+    # INNER MAP AREA (layout-reserved margins)
+    # -------------------------------------------------------------------------
 
     inner_width_cm = spec.width_cm - 2
     inner_height_cm = spec.height_cm - 5
@@ -79,9 +91,9 @@ def render_city_map(
         math.ceil(math.sqrt(half_width_m**2 + half_height_m**2))
     ) + 300
 
-    # ------------------------------------------------------------
-    # CENTER + CLIP BBOX
-    # ------------------------------------------------------------
+    # -------------------------------------------------------------------------
+    # CENTER + CLIP
+    # -------------------------------------------------------------------------
 
     center = gpd.GeoDataFrame(
         geometry=[Point(center_lon, center_lat)],
@@ -97,9 +109,9 @@ def render_city_map(
 
     clip_rect = box(minx, miny, maxx, maxy)
 
-    # ------------------------------------------------------------
-    # ROAD GRAPH
-    # ------------------------------------------------------------
+    # -------------------------------------------------------------------------
+    # ROADS
+    # -------------------------------------------------------------------------
 
     G = ox.graph_from_point(
         (center_lat, center_lon),
@@ -107,16 +119,18 @@ def render_city_map(
         network_type="all",
         simplify=True,
     )
+    ox.settings.timeout = 30
 
     edges = ox.graph_to_gdfs(G, nodes=False, edges=True)
     edges_p = ox.projection.project_gdf(edges)
     edges_p = gpd.clip(edges_p, gpd.GeoSeries([clip_rect], crs=edges_p.crs))
+    edges_p = edges_p[~edges_p.is_empty]
 
     edges_p["road_class"] = edges_p["highway"].apply(_classify_road)
 
-    # ------------------------------------------------------------
+    # -------------------------------------------------------------------------
     # WATER
-    # ------------------------------------------------------------
+    # -------------------------------------------------------------------------
 
     water = ox.features_from_point(
         (center_lat, center_lon),
@@ -126,19 +140,26 @@ def render_city_map(
 
     if len(water) > 0:
         water_p = ox.projection.project_gdf(water)
-        water_p = gpd.clip(water_p, gpd.GeoSeries([clip_rect], crs=water_p.crs))
+        water_p = gpd.clip(
+            water_p,
+            gpd.GeoSeries([clip_rect], crs=water_p.crs)
+        )
     else:
         water_p = None
 
-    # ------------------------------------------------------------
+    # -------------------------------------------------------------------------
     # BLOCKS (POLYGONIZE)
-    # ------------------------------------------------------------
+    # -------------------------------------------------------------------------
 
     boundary = clip_rect.boundary
     merged = unary_union(list(edges_p.geometry) + [boundary])
     polygons = list(polygonize(merged))
 
-    blocks_gdf = gpd.GeoDataFrame(geometry=polygons, crs=edges_p.crs)
+    blocks_gdf = gpd.GeoDataFrame(
+        geometry=polygons,
+        crs=edges_p.crs
+    )
+
     blocks_gdf = gpd.clip(
         blocks_gdf,
         gpd.GeoSeries([clip_rect], crs=blocks_gdf.crs)
@@ -148,33 +169,33 @@ def render_city_map(
         water_union = water_p.unary_union
         blocks_gdf["geometry"] = blocks_gdf.geometry.difference(water_union)
 
-    if palette_cfg.blocks and len(blocks_gdf) > 0:
+    if len(blocks_gdf) > 0:
         blocks_gdf["color"] = np.random.choice(
-            palette_cfg.blocks,
+            style_cfg.block_colors,
             size=len(blocks_gdf)
         )
 
-    # ------------------------------------------------------------
+    # -------------------------------------------------------------------------
     # PLOT
-    # ------------------------------------------------------------
+    # -------------------------------------------------------------------------
 
     fig = plt.figure(figsize=(fig_w_in, fig_h_in))
     ax = fig.add_axes([0, 0, 1, 1])
 
-    fig.patch.set_facecolor(palette_cfg.background)
-    ax.set_facecolor(palette_cfg.background)
+    fig.patch.set_facecolor(style_cfg.background)
+    ax.set_facecolor(style_cfg.background)
 
     # Water
     if water_p is not None and len(water_p) > 0:
         water_p.plot(
             ax=ax,
-            color=palette_cfg.water,
+            color=style_cfg.water,
             linewidth=0,
             zorder=1,
         )
 
     # Blocks
-    if palette_cfg.blocks and len(blocks_gdf) > 0:
+    if len(blocks_gdf) > 0:
         blocks_gdf.plot(
             ax=ax,
             color=blocks_gdf["color"],
@@ -183,15 +204,15 @@ def render_city_map(
         )
 
     # Roads
-    road_width_base = palette_cfg.road_style.base_width
-    multipliers = palette_cfg.road_style.multipliers
+    road_width_base = style_cfg.road_style.base_width
+    multipliers = style_cfg.road_style.multipliers
 
     for cls, mult in multipliers.items():
         subset = edges_p[edges_p["road_class"] == cls]
         if len(subset) > 0:
             subset.plot(
                 ax=ax,
-                color=palette_cfg.road,
+                color=style_cfg.road,
                 linewidth=road_width_base * mult,
                 zorder=20,
             )
@@ -200,10 +221,23 @@ def render_city_map(
     ax.set_ylim(miny, maxy)
     ax.set_axis_off()
 
-    # Optional SVG save (CLI use-case)
-    if output_dir is not None:
-        output_dir.mkdir(parents=True, exist_ok=True)
-        svg_path = output_dir / f"{filename_prefix}.svg"
-        fig.savefig(svg_path, format="svg")
+    # -------------------------------------------------------------------------
+    # SAVE SVG
+    # -------------------------------------------------------------------------
 
-    return fig
+    output_svg_path = None
+
+    if output_dir:
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        output_svg_path = output_dir / f"{filename_prefix}.svg"
+        fig.savefig(
+            output_svg_path,
+            format="svg",
+            bbox_inches=None
+        )
+
+    plt.close(fig)
+
+    return MapLayerResult(output_svg=output_svg_path)

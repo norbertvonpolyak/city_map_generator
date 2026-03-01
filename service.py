@@ -2,7 +2,7 @@ from io import BytesIO
 import matplotlib.pyplot as plt
 
 from generator.specs import spec_from_size_key
-from generator.render import render_city_map
+from generator.engines.render_block import render_city_map
 
 
 def generate_preview(

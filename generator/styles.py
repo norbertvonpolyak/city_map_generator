@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional
-
+from typing import Dict, List
 
 
 # =============================================================================
@@ -15,48 +14,51 @@ class RoadStyle:
     multipliers: Dict[str, float]
 
 
-DEFAULT_ROAD_STYLE = RoadStyle(
-    base_width=1.2,
-    multipliers={
-        "minor": 0.6,
-        "local": 1.0,
-        "arterial": 1.6,
-        "highway": 2.4,
-    },
-)
-
-
 # =============================================================================
-# PALETTE CONFIG
+# ENGINE-SPECIFIC STYLE CONFIGS
 # =============================================================================
 
 @dataclass(frozen=True)
-class PaletteConfig:
+class BlockStyleConfig:
     background: str
-    blocks: Optional[List[str]]   # ← EZ lett Optional
+    block_colors: List[str]
+    road: str
+    water: str
+    road_style: RoadStyle
+
+
+@dataclass(frozen=True)
+class BuildingStyleConfig:
+    background: str
+    building_colors: List[str]
+    road: str
+    water: str
+    road_style: RoadStyle
+
+
+@dataclass(frozen=True)
+class LineStyleConfig:
+    background: str
     road: str
     water: str
     road_style: RoadStyle
 
 
 # =============================================================================
-# SHARED COLORS
+# STYLE DEFINITIONS
 # =============================================================================
 
-WATER_LIGHT_BLUE = "#a9c9d8"
+STYLES = {
 
+    # -------------------------------------------------------------------------
+    # BLOCK-BASED
+    # -------------------------------------------------------------------------
 
-# =============================================================================
-# PALETTES
-# =============================================================================
-
-PALETTES: Dict[str, PaletteConfig] = {
-
-    "urban_modern": PaletteConfig(
+    "urban_modern": BlockStyleConfig(
         background="#D9D5C7",
-        blocks=[
-            "#E8891C","#D26A1E","#C65A2A",
-            "#E2C79F","#F0A21A","#7C7368","#2F2F2F"
+        block_colors=[
+            "#E8891C", "#D26A1E", "#C65A2A",
+            "#E2C79F", "#F0A21A", "#7C7368", "#2F2F2F"
         ],
         road="#FFFFFF",
         water="#5F9F9B",
@@ -67,14 +69,22 @@ PALETTES: Dict[str, PaletteConfig] = {
                 "arterial": 1.8,
                 "local": 1.0,
                 "minor": 0.6,
-            }
+            },
         ),
     ),
 
+    # -------------------------------------------------------------------------
+    # BUILDING-BASED
+    # -------------------------------------------------------------------------
 
-        "vintage_atlas": PaletteConfig(
+    "vintage_atlas": BuildingStyleConfig(
         background="#E6D3B3",
-        blocks=None,
+        building_colors=[
+            "#C9B28F",
+            "#BFA37C",
+            "#D7C2A4",
+            "#A88F6C",
+        ],
         road="#5C3D23",
         water="#8FA6AA",
         road_style=RoadStyle(
@@ -88,18 +98,36 @@ PALETTES: Dict[str, PaletteConfig] = {
         ),
     ),
 
-
+    "pretty_buildings": BuildingStyleConfig(
+        background="#F4F1EB",
+        building_colors=[
+            "#E8891C",
+            "#D26A1E",
+            "#C65A2A",
+            "#F0A21A",
+        ],
+        road="#2F2F2F",
+        water="#9BBCC8",
+        road_style=RoadStyle(
+            base_width=1.2,
+            multipliers={
+                "minor": 0.6,
+                "local": 1.0,
+                "arterial": 1.8,
+                "highway": 2.6,
+            },
+        ),
+    ),
 
     # -------------------------------------------------------------------------
-    # NEW BLACK MINIMAL (BLOCK-FREE)
+    # LINE-BASED
     # -------------------------------------------------------------------------
 
-    "black_minimal": PaletteConfig(
+    "bw_minimal": LineStyleConfig(
         background="#0F0F10",
-        blocks=None,
         road="#FFFFFF",
         water="#CFC8B8",
-        road_style=RoadStyle (
+        road_style=RoadStyle(
             base_width=1.4,
             multipliers={
                 "minor": 0.35,
@@ -108,9 +136,7 @@ PALETTES: Dict[str, PaletteConfig] = {
                 "highway": 4.0,
             },
         ),
-
     ),
-
 }
 
 
@@ -118,9 +144,9 @@ PALETTES: Dict[str, PaletteConfig] = {
 # PUBLIC API
 # =============================================================================
 
-def get_palette_config(name: str) -> PaletteConfig:
-    if name not in PALETTES:
+def get_style_config(name: str):
+    if name not in STYLES:
         raise ValueError(
-            f"Unknown palette '{name}'. Available: {list(PALETTES.keys())}"
+            f"Unknown style '{name}'. Available: {list(STYLES.keys())}"
         )
-    return PALETTES[name]
+    return STYLES[name]
