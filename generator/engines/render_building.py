@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import matplotlib
+matplotlib.use("Agg")
+
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -31,10 +33,6 @@ class MapLayerResult:
 # HELPERS
 # =============================================================================
 
-def _safe_timestamp() -> str:
-    return datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-
-
 def _normalize_highway_value(v):
     return v[0] if isinstance(v, (list, tuple)) and v else v
 
@@ -54,7 +52,7 @@ def _classify_road(hw: str) -> str:
 
 
 # =============================================================================
-# BUILDING-BASED ENGINE
+# BUILDING ENGINE
 # =============================================================================
 
 def render_map_building(
@@ -66,6 +64,7 @@ def render_map_building(
     palette_name: str,
     seed: Optional[int] = 42,
     filename_prefix: str = "map_layer_building",
+    preview_mode: bool = False,
     network_type_draw: str = "drive",
     zoom: float = 0.6,
     road_width: float = 1.1,
@@ -75,9 +74,7 @@ def render_map_building(
     style_cfg = get_style_config(palette_name)
 
     if not isinstance(style_cfg, BuildingStyleConfig):
-        raise TypeError(
-            f"Style '{palette_name}' is not building-based."
-        )
+        raise TypeError(f"Style '{palette_name}' is not building-based.")
 
     if seed is not None:
         np.random.seed(seed)
@@ -88,13 +85,11 @@ def render_map_building(
 
     fig_w_in, fig_h_in = spec.fig_size_inches
     half_width_m, half_height_m = spec.frame_half_sizes_m
+
     half_width_m *= zoom
     half_height_m *= zoom
 
     dist_m = int(np.ceil((half_width_m**2 + half_height_m**2) ** 0.5)) + 300
-
-    ts = _safe_timestamp()
-    output_svg = output_dir / f"{filename_prefix}_{ts}.svg"
 
     # -------------------------------------------------------------------------
     # CENTER + CLIP
@@ -111,6 +106,7 @@ def render_map_building(
     maxx = center_p.x + half_width_m
     miny = center_p.y - half_height_m
     maxy = center_p.y + half_height_m
+
     clip_rect = box(minx, miny, maxx, maxy)
 
     # -------------------------------------------------------------------------
@@ -212,13 +208,28 @@ def render_map_building(
     ax.set_ylim(miny, maxy)
     ax.set_axis_off()
 
-    fig.savefig(
-        output_svg,
-        format="svg",
-        bbox_inches="tight",
-        dpi=spec.dpi,
-    )
+    # -------------------------------------------------------------------------
+    # SAVE
+    # -------------------------------------------------------------------------
+
+    if preview_mode:
+        output_path = output_dir / f"{filename_prefix}.png"
+        fig.savefig(
+            output_path,
+            format="png",
+            dpi=140,
+            bbox_inches="tight",
+            pad_inches=0,
+        )
+    else:
+        output_path = output_dir / f"{filename_prefix}.svg"
+        fig.savefig(
+            output_path,
+            format="svg",
+            bbox_inches="tight",
+            dpi=spec.dpi,
+        )
 
     plt.close(fig)
 
-    return MapLayerResult(output_svg=output_svg)
+    return MapLayerResult(output_svg=output_path)

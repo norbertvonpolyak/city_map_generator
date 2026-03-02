@@ -23,13 +23,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     p.add_argument("--size-key", default="70x50")
-    p.add_argument("--extent-m", type=int, default=2000)
+    p.add_argument("--extent-m", type=int, default=2000) #48.13654710283969, 11.576770383227576
     p.add_argument("--dpi", type=int, default=300)
 
     p.add_argument("--center-lat", type=float,
-                   default=52.37025557713184)
+                   default=48.13654710283969)
     p.add_argument("--center-lon", type=float,
-                   default=4.8982369032362545)
+                   default=11.576770383227576)
 
     p.add_argument("--palette", default="urban_modern")
     p.add_argument("--seed", type=int, default=42)
@@ -86,17 +86,21 @@ def main() -> None:
         dpi=args.dpi,
     )
 
-    print ("--------------------------------------------------")
-    print ("Rendering product via style dispatcher")
-    print ("--------------------------------------------------")
+    print("--------------------------------------------------")
+    print("Rendering product via style dispatcher")
+    print("--------------------------------------------------")
 
     subtitle_text = (
         args.subtitle
         if args.subtitle
-        else format_short_coords (args.center_lat, args.center_lon)
+        else format_short_coords(args.center_lat, args.center_lon)
     )
 
-    final_pdf = render_product (
+    # -------------------------------------------------------------------------
+    # PREVIEW RENDER
+    # -------------------------------------------------------------------------
+
+    output_path = render_product(
         style_name=args.palette,
         center_lat=args.center_lat,
         center_lon=args.center_lon,
@@ -104,9 +108,10 @@ def main() -> None:
         output_dir=args.output_dir,
         title=args.title,
         subtitle=subtitle_text,
+        preview_mode=True,  # ← preview teszt
     )
 
-    print ("Final PDF:", final_pdf)
+    print("Preview output:", output_path)
 
     total_end = time.perf_counter()
     print(f"Total time : {total_end - total_start:.2f} seconds")

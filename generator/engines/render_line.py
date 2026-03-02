@@ -6,7 +6,6 @@ matplotlib.use("Agg")
 from dataclasses import dataclass
 from typing import Optional
 from pathlib import Path
-from datetime import datetime
 
 import geopandas as gpd
 import matplotlib.pyplot as plt
@@ -33,10 +32,6 @@ class MapLayerResult:
 # HELPERS
 # ---------------------------------------------------------------------------
 
-def _safe_timestamp() -> str:
-    return datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-
-
 def _classify_road(hw: str) -> str:
     hw = str(hw)
 
@@ -62,6 +57,7 @@ def render_map_line(
     palette_name: str,
     seed: Optional[int] = 42,
     filename_prefix: str = "map_layer_line",
+    preview_mode: bool = False,
 ) -> MapLayerResult:
 
     style_cfg = get_style_config(palette_name)
@@ -81,9 +77,6 @@ def render_map_line(
     extent_m = spec.extent_m
 
     dist_m = int(np.ceil((half_width_m**2 + half_height_m**2) ** 0.5)) + 300
-
-    ts = _safe_timestamp()
-    output_svg = output_dir / f"{filename_prefix}_{ts}.svg"
 
     # -----------------------------------------------------------------------
     # CENTER + CLIP
@@ -111,13 +104,11 @@ def render_map_line(
             '["highway"~"motorway|trunk|primary|secondary|tertiary|'
             'residential|living_street|service|pedestrian|cycleway|footway"]'
         )
-
     elif extent_m <= 3000:
         custom_filter = (
             '["highway"~"motorway|trunk|primary|secondary|tertiary|'
             'residential|living_street|service|cycleway"]'
         )
-
     else:
         custom_filter = (
             '["highway"~"motorway|trunk|primary|secondary|tertiary"]'
@@ -155,7 +146,6 @@ def render_map_line(
     road_width_base = style_cfg.road_style.base_width
     multipliers = style_cfg.road_style.multipliers
 
-    # optional adaptive width scaling
     if extent_m > 2000:
         road_width_base *= (2000 / extent_m)
 
@@ -173,13 +163,27 @@ def render_map_line(
     ax.set_ylim(miny, maxy)
     ax.set_axis_off()
 
-    # SVG → no dpi needed
-    fig.savefig(
-        output_svg,
-        format="svg",
-        bbox_inches="tight",
-    )
+    # -----------------------------------------------------------------------
+    # SAVE
+    # -----------------------------------------------------------------------
+
+    if preview_mode:
+        output_path = output_dir / f"{filename_prefix}.png"
+        fig.savefig(
+            output_path,
+            format="png",
+            dpi=140,
+            bbox_inches="tight",
+            pad_inches=0,
+        )
+    else:
+        output_path = output_dir / f"{filename_prefix}.svg"
+        fig.savefig(
+            output_path,
+            format="svg",
+            bbox_inches="tight",
+        )
 
     plt.close(fig)
 
-    return MapLayerResult(output_svg=output_svg)
+    return MapLayerResult(output_svg=output_path)

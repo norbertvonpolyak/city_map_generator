@@ -73,6 +73,29 @@ STYLES = {
         ),
     ),
 
+    "minimal_sand": BlockStyleConfig(
+        background="#E9E4DA",
+        block_colors=[
+            "#F2EEE6",
+            "#E1DBCF",
+            "#CFC6B6",
+            "#B8AEA0",
+            "#9C9286",
+            "#6E6A63",
+            "#2C2C2C",
+        ],
+        road="#FFFFFF",
+        water="#BFD1D6",
+        road_style=RoadStyle(
+            base_width=0.8,
+            multipliers={
+                "highway": 2.4,
+                "arterial": 1.8,
+                "local": 1.0,
+                "minor": 0.6,
+            },
+        ),
+    ),
     # -------------------------------------------------------------------------
     # BUILDING-BASED
     # -------------------------------------------------------------------------
