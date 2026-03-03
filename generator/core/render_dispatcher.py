@@ -7,22 +7,26 @@ from generator.engines.render_line import render_map_line
 
 from generator.specs import ProductSpec
 from generator.core.style_registry import STYLE_REGISTRY, EngineType, ENGINE_LAYOUT_MAP
-
+from uuid import uuid4
 
 # ==========================================================
 # FILE NAME GENERATOR
 # ==========================================================
 
 def _generate_preview_filename(style: str, spec: ProductSpec) -> str:
-    timestamp = datetime.now().strftime("%y%m%d_%H%M%S")
+
+
+    timestamp = datetime.now ().strftime ("%Y%m%d_%H%M%S")
+    unique = uuid4 ().hex [:6]
     size_key = f"{spec.width_cm}x{spec.height_cm}"
-    return f"{style}_{size_key}_{timestamp}.png"
+    return f"{size_key}_{timestamp}_{unique}.png"
 
 
 def _generate_order_filename(order_id: str, spec: ProductSpec) -> str:
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now ().strftime ("%Y%m%d_%H%M%S")
+    unique = uuid4 ().hex [:6]
     size_key = f"{spec.width_cm}x{spec.height_cm}"
-    return f"{order_id}_{size_key}_{timestamp}.pdf"
+    return f"{order_id}_{size_key}_{timestamp}_{unique}.pdf"
 
 
 # ==========================================================
@@ -128,7 +132,7 @@ def render_product(
         title=title,
         subtitle=subtitle,
         palette_name=style_name,
-        filename_prefix=filename_prefix,
+        #filename_prefix=filename_prefix,
     )
 
     return final_pdf_path

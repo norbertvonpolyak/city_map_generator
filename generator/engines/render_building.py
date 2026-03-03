@@ -71,6 +71,15 @@ def render_map_building(
     min_building_area: float = 15.0,
 ) -> MapLayerResult:
 
+    print(">>> ENTER render_map_building")
+
+    # ------------------------------------------------------------------
+    # OSM SETTINGS
+    # ------------------------------------------------------------------
+
+    ox.settings.use_cache = True
+    ox.settings.timeout = 60
+
     style_cfg = get_style_config(palette_name)
 
     if not isinstance(style_cfg, BuildingStyleConfig):
@@ -91,9 +100,11 @@ def render_map_building(
 
     dist_m = int(np.ceil((half_width_m**2 + half_height_m**2) ** 0.5)) + 300
 
-    # -------------------------------------------------------------------------
+    print(f">>> dist_m = {dist_m}")
+
+    # ------------------------------------------------------------------
     # CENTER + CLIP
-    # -------------------------------------------------------------------------
+    # ------------------------------------------------------------------
 
     center = gpd.GeoDataFrame(
         geometry=[Point(center_lon, center_lat)],
@@ -109,10 +120,11 @@ def render_map_building(
 
     clip_rect = box(minx, miny, maxx, maxy)
 
-    # -------------------------------------------------------------------------
-    # ROADS
-    # -------------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # ROADS (graph)
+    # ------------------------------------------------------------------
 
+    print(">>> Downloading roads...")
     G = ox.graph_from_point(
         (center_lat, center_lon),
         dist=dist_m,
@@ -131,64 +143,124 @@ def render_map_building(
     else:
         edges_p["road_class"] = "local"
 
-    # -------------------------------------------------------------------------
-    # BUILDINGS
-    # -------------------------------------------------------------------------
+    print(">>> Roads ready")
 
-    try:
-        gdf_bld = ox.features_from_point(
-            (center_lat, center_lon),
-            tags={"building": True},
-            dist=dist_m,
-        )
-    except InsufficientResponseError:
-        gdf_bld = None
+    # ------------------------------------------------------------------
+    # UNIFIED FEATURE QUERY (buildings + green + water)
+    # ------------------------------------------------------------------
 
-    gdf_bld_p = None
+    print(">>> Downloading unified features...")
 
-    if gdf_bld is not None and len(gdf_bld) > 0:
-        gdf_bld = gdf_bld[gdf_bld.geometry.notnull()]
-        gdf_bld_p = ox.projection.project_gdf(gdf_bld)
-        gdf_bld_p = gdf_bld_p[
-            gdf_bld_p.geom_type.isin(["Polygon", "MultiPolygon"])
-        ]
-        gdf_bld_p = gpd.clip(
-            gdf_bld_p,
-            gpd.GeoSeries([clip_rect], crs=gdf_bld_p.crs),
-        )
-        gdf_bld_p = gdf_bld_p[
-            gdf_bld_p.geometry.area > min_building_area
-        ]
+    tags = {
+        "building": True,
+        "leisure": "park",
+        "landuse": "grass",
+        "natural": "water",
+    }
 
-    # -------------------------------------------------------------------------
+    gdf_all = ox.features_from_point(
+        (center_lat, center_lon),
+        tags=tags,
+        dist=dist_m,
+    )
+
+    print(">>> Unified features downloaded")
+
+    gdf_all = gdf_all[gdf_all.geometry.notnull()]
+    gdf_all_p = ox.projection.project_gdf(gdf_all)
+
+    gdf_all_p = gdf_all_p[
+        gdf_all_p.geom_type.isin(["Polygon", "MultiPolygon"])
+    ]
+
+    gdf_all_p = gpd.clip(
+        gdf_all_p,
+        gpd.GeoSeries([clip_rect], crs=gdf_all_p.crs),
+    )
+
+    # --- Split layers ---
+
+    buildings_p = gdf_all_p[gdf_all_p.get("building").notnull()]
+    buildings_p = buildings_p[buildings_p.geometry.area > min_building_area]
+
+    parks_p = gdf_all_p[
+        (gdf_all_p.get("leisure") == "park")
+        | (gdf_all_p.get("landuse") == "grass")
+    ]
+
+    water_p = gdf_all_p[gdf_all_p.get("natural") == "water"]
+
+    print(f">>> Buildings: {len(buildings_p)}")
+    print(f">>> Green areas: {len(parks_p)}")
+    print(f">>> Water areas: {len(water_p)}")
+
+    # ------------------------------------------------------------------
     # PLOT
-    # -------------------------------------------------------------------------
+    # ------------------------------------------------------------------
 
     fig, ax = plt.subplots(figsize=(fig_w_in, fig_h_in))
     fig.patch.set_facecolor(style_cfg.background)
     ax.set_facecolor(style_cfg.background)
 
-    # Buildings
-    if gdf_bld_p is not None and len(gdf_bld_p) > 0:
-
-        if not style_cfg.building_colors:
-            raise ValueError(
-                f"Style '{palette_name}' must define building_colors."
-            )
-
-        building_colors = np.random.choice(
-            style_cfg.building_colors,
-            size=len(gdf_bld_p),
+    # --- Water ---
+    if len(water_p) > 0:
+        water_p.plot(
+            ax=ax,
+            color="#8EC5E8",
+            edgecolor="none",
+            linewidth=0,
+            zorder=1,
         )
 
-        gdf_bld_p.plot(
+    # --- Green ---
+    if len(parks_p) > 0:
+        parks_p.plot(
+            ax=ax,
+            color="#DADFCF",
+            edgecolor="none",
+            linewidth=0,
+            zorder=2,
+        )
+
+    # --- Buildings ---
+    if len(buildings_p) > 0:
+        # ----------------------------------------------------------
+        # WEIGHTED BUILDING COLORS (urban_modern full palette)
+        # ----------------------------------------------------------
+
+        palette = style_cfg.building_colors
+
+        if len (palette) != 7:
+            # fallback ha valamiért nem a teljes urban palette van
+            building_colors = np.random.choice (
+                palette,
+                size=len (buildings_p),
+            )
+        else:
+            # Urban modern súlyozott eloszlás
+            weights = [
+                0.34,  # F29F1F
+                0.28,  # E27A1F
+                0.15,  # C65A2A
+                0.12,  # D9BB8F
+                0.08,  # F4B942
+                0.03,  # 2F2F2F
+            ]
+
+            building_colors = np.random.choice (
+                palette,
+                size=len (buildings_p),
+                p=weights,
+            )
+
+        buildings_p.plot (
             ax=ax,
             color=building_colors,
+            edgecolor="none",
             linewidth=0,
             zorder=5,
         )
-
-    # Roads
+    # --- Roads ---
     road_width_base = style_cfg.road_style.base_width
     multipliers = style_cfg.road_style.multipliers
 
@@ -208,28 +280,19 @@ def render_map_building(
     ax.set_ylim(miny, maxy)
     ax.set_axis_off()
 
-    # -------------------------------------------------------------------------
+    # ------------------------------------------------------------------
     # SAVE
-    # -------------------------------------------------------------------------
+    # ------------------------------------------------------------------
 
     if preview_mode:
         output_path = output_dir / f"{filename_prefix}.png"
-        fig.savefig(
-            output_path,
-            format="png",
-            dpi=140,
-            bbox_inches="tight",
-            pad_inches=0,
-        )
+        fig.savefig(output_path, dpi=140, bbox_inches="tight", pad_inches=0)
     else:
         output_path = output_dir / f"{filename_prefix}.svg"
-        fig.savefig(
-            output_path,
-            format="svg",
-            bbox_inches="tight",
-            dpi=spec.dpi,
-        )
+        fig.savefig(output_path, format="svg", dpi=spec.dpi, bbox_inches="tight")
 
     plt.close(fig)
+
+    print(">>> Render complete")
 
     return MapLayerResult(output_svg=output_path)

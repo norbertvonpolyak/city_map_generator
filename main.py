@@ -22,7 +22,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="City Map Renderer – B Architecture (SVG pipeline)"
     )
 
-    p.add_argument("--size-key", default="70x50")
+    p.add_argument("--size-key", default="50x50")
     p.add_argument("--extent-m", type=int, default=2000) #48.13654710283969, 11.576770383227576
     p.add_argument("--dpi", type=int, default=300)
 
@@ -31,11 +31,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--center-lon", type=float,
                    default=11.576770383227576)
 
-    p.add_argument("--palette", default="urban_modern")
+    p.add_argument("--palette", default="pretty_buildings")
     p.add_argument("--seed", type=int, default=42)
 
     p.add_argument("--title", type=str,
-                   default="AMSTERDAM")
+                   default="MÜNCHEN")
 
     p.add_argument("--subtitle", type=str,
                    default=None)
@@ -100,7 +100,7 @@ def main() -> None:
     # PREVIEW RENDER
     # -------------------------------------------------------------------------
 
-    output_path = render_product(
+    output_path = render_product (
         style_name=args.palette,
         center_lat=args.center_lat,
         center_lon=args.center_lon,
@@ -108,7 +108,8 @@ def main() -> None:
         output_dir=args.output_dir,
         title=args.title,
         subtitle=subtitle_text,
-        preview_mode=True,  # ← preview teszt
+        preview_mode=False,
+        order_id="DESIGN_TEST",  # ← EZ KELL
     )
 
     print("Preview output:", output_path)
