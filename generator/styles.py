@@ -73,6 +73,29 @@ STYLES = {
         ),
     ),
 
+    "minimal_sand": BlockStyleConfig(
+        background="#E9E4DA",
+        block_colors=[
+            "#F2EEE6",
+            "#E1DBCF",
+            "#CFC6B6",
+            "#B8AEA0",
+            "#9C9286",
+            "#6E6A63",
+            "#2C2C2C",
+        ],
+        road="#FFFFFF",
+        water="#BFD1D6",
+        road_style=RoadStyle(
+            base_width=0.8,
+            multipliers={
+                "highway": 2.4,
+                "arterial": 1.8,
+                "local": 1.0,
+                "minor": 0.6,
+            },
+        ),
+    ),
     # -------------------------------------------------------------------------
     # BUILDING-BASED
     # -------------------------------------------------------------------------
@@ -101,13 +124,15 @@ STYLES = {
     "pretty_buildings": BuildingStyleConfig(
         background="#F4F1EB",
         building_colors=[
-            "#E8891C",
-            "#D26A1E",
-            "#C65A2A",
-            "#F0A21A",
+            "#F29F1F",  # élénk, de nem neon
+            "#E27A1F",  # meleg mid
+            "#C65A2A",  # mély terrakotta
+            "#D9BB8F",  # sötétített homok
+            "#F4B942",  # világos akcent
+            "#2F2F2F",  # ritka kontraszt
         ],
-        road="#2F2F2F",
-        water="#9BBCC8",
+        road="#F4EFE6",
+        water="#CFE3EC",
         road_style=RoadStyle(
             base_width=1.2,
             multipliers={

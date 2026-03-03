@@ -1,4 +1,5 @@
 from pathlib import Path
+from datetime import datetime
 
 from generator.engines.render_block import render_map_block
 from generator.engines.render_building import render_map_building
@@ -6,7 +7,31 @@ from generator.engines.render_line import render_map_line
 
 from generator.specs import ProductSpec
 from generator.core.style_registry import STYLE_REGISTRY, EngineType, ENGINE_LAYOUT_MAP
+from uuid import uuid4
 
+# ==========================================================
+# FILE NAME GENERATOR
+# ==========================================================
+
+def _generate_preview_filename(style: str, spec: ProductSpec) -> str:
+
+
+    timestamp = datetime.now ().strftime ("%Y%m%d_%H%M%S")
+    unique = uuid4 ().hex [:6]
+    size_key = f"{spec.width_cm}x{spec.height_cm}"
+    return f"{size_key}_{timestamp}_{unique}.png"
+
+
+def _generate_order_filename(order_id: str, spec: ProductSpec) -> str:
+    timestamp = datetime.now ().strftime ("%Y%m%d_%H%M%S")
+    unique = uuid4 ().hex [:6]
+    size_key = f"{spec.width_cm}x{spec.height_cm}"
+    return f"{order_id}_{size_key}_{timestamp}_{unique}.pdf"
+
+
+# ==========================================================
+# MAIN DISPATCHER
+# ==========================================================
 
 def render_product(
     *,
@@ -17,12 +42,29 @@ def render_product(
     output_dir: Path,
     title: str,
     subtitle: str,
+    preview_mode: bool = False,
+    order_id: str | None = None,
 ):
 
     if style_name not in STYLE_REGISTRY:
         raise ValueError(f"Unknown style: {style_name}")
 
     style_def = STYLE_REGISTRY[style_name]
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # ---------------------------------------------------------
+    # FILE NAMING
+    # ---------------------------------------------------------
+
+    if preview_mode:
+        filename = _generate_preview_filename(style_name, spec)
+    else:
+        if not order_id:
+            raise ValueError("order_id required for print mode")
+        filename = _generate_order_filename(order_id, spec)
+
+    filename_prefix = filename.replace(".png", "").replace(".pdf", "")
 
     # ---------------------------------------------------------
     # ENGINE DISPATCH
@@ -36,6 +78,8 @@ def render_product(
             spec=spec,
             output_dir=output_dir,
             palette_name=style_name,
+            preview_mode=preview_mode,
+            filename_prefix=filename_prefix,
         )
 
     elif style_def.engine == EngineType.BUILDING:
@@ -46,6 +90,8 @@ def render_product(
             spec=spec,
             output_dir=output_dir,
             palette_name=style_name,
+            preview_mode=preview_mode,
+            filename_prefix=filename_prefix,
         )
 
     elif style_def.engine == EngineType.LINE:
@@ -56,27 +102,37 @@ def render_product(
             spec=spec,
             output_dir=output_dir,
             palette_name=style_name,
+            preview_mode=preview_mode,
+            filename_prefix=filename_prefix,
         )
 
     else:
         raise RuntimeError("Invalid engine type")
 
-    map_svg_path = map_result.output_svg
+    map_output_path = map_result.output_svg
 
     # ---------------------------------------------------------
-    # LAYOUT DISPATCH
+    # PREVIEW → RETURN PNG
+    # ---------------------------------------------------------
+
+    if preview_mode:
+        return map_output_path
+
+    # ---------------------------------------------------------
+    # PRINT → LAYOUT → PDF
     # ---------------------------------------------------------
 
     layout_func = ENGINE_LAYOUT_MAP[style_def.engine]
 
     final_pdf_path = layout_func(
         spec=spec,
-        map_svg_path=map_svg_path,
+        map_svg_path=map_output_path,
         output_dir=output_dir,
         size_key=f"{spec.width_cm}x{spec.height_cm}",
         title=title,
         subtitle=subtitle,
         palette_name=style_name,
+        #filename_prefix=filename_prefix,
     )
 
     return final_pdf_path

@@ -17,16 +17,30 @@ from generator.layouts.layout_block import compose_layout_block
 from generator.layouts.layout_building import compose_layout_building
 from generator.layouts.layout_line import compose_layout_line
 
+
 ENGINE_LAYOUT_MAP = {
     EngineType.BLOCK: compose_layout_block,
     EngineType.BUILDING: compose_layout_building,
     EngineType.LINE: compose_layout_line,
 }
 
+
 STYLE_REGISTRY = {
+    # ---------------------------------------------------------
+    # BLOCK ENGINE STYLES
+    # ---------------------------------------------------------
+
     "urban_modern": StyleDefinition(
         engine=EngineType.BLOCK,
     ),
+
+    "minimal_sand": StyleDefinition(
+        engine=EngineType.BLOCK,
+    ),
+
+    # ---------------------------------------------------------
+    # BUILDING ENGINE STYLES
+    # ---------------------------------------------------------
 
     "vintage_atlas": StyleDefinition(
         engine=EngineType.BUILDING,
@@ -35,6 +49,10 @@ STYLE_REGISTRY = {
     "pretty_buildings": StyleDefinition(
         engine=EngineType.BUILDING,
     ),
+
+    # ---------------------------------------------------------
+    # LINE ENGINE STYLES
+    # ---------------------------------------------------------
 
     "bw_minimal": StyleDefinition(
         engine=EngineType.LINE,
