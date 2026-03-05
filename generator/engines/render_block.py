@@ -203,15 +203,28 @@ def render_map_block(
     road_width_base = style_cfg.road_style.base_width
     multipliers = style_cfg.road_style.multipliers
 
-    for cls, mult in multipliers.items():
-        subset = edges_p[edges_p["road_class"] == cls]
-        if len(subset) > 0:
-            subset.plot(
-                ax=ax,
-                color=style_cfg.road,
-                linewidth=road_width_base * mult,
-                zorder=20,
-            )
+    for cls, mult in multipliers.items ():
+
+        subset = edges_p [edges_p ["road_class"] == cls]
+
+        if len (subset) == 0:
+            continue
+
+        if cls == "highway":
+            color = "#FFFFFF"
+        elif cls == "arterial":
+            color = "#F4F1E8"
+        elif cls == "local":
+            color = "#EFEBDD"
+        else:
+            color = "#E6E2D6"
+
+        subset.plot (
+            ax=ax,
+            color=color,
+            linewidth=road_width_base * mult,
+            zorder=20,
+        )
 
     ax.set_xlim(minx, maxx)
     ax.set_ylim(miny, maxy)

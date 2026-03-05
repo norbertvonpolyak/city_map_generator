@@ -60,10 +60,10 @@ STYLES = {
             "#E8891C", "#D26A1E", "#C65A2A",
             "#E2C79F", "#F0A21A", "#7C7368", "#2F2F2F"
         ],
-        road="#FFFFFF",
+        road="#EFEBDD",
         water="#5F9F9B",
         road_style=RoadStyle(
-            base_width=0.8,
+            base_width=3.3,
             multipliers={
                 "highway": 2.4,
                 "arterial": 1.8,
@@ -89,10 +89,10 @@ STYLES = {
         road_style=RoadStyle(
             base_width=0.8,
             multipliers={
-                "highway": 2.4,
-                "arterial": 1.8,
+                "highway": 3.0,
+                "arterial": 2.0,
                 "local": 1.0,
-                "minor": 0.6,
+                "minor": 0.45,
             },
         ),
     ),
