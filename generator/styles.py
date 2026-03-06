@@ -30,9 +30,20 @@ class BlockStyleConfig:
 @dataclass(frozen=True)
 class BuildingStyleConfig:
     background: str
+
     building_colors: List[str]
-    road: str
+    building_edge: str
+    building_edge_width: float
+
+    green: str
+    green_edge: str
+    green_edge_width: float
+
     water: str
+    water_edge: str
+    water_edge_width: float
+
+    road: str
     road_style: RoadStyle
 
 
@@ -51,7 +62,7 @@ class LineStyleConfig:
 STYLES = {
 
     # -------------------------------------------------------------------------
-    # BLOCK-BASED
+    # BLOCK
     # -------------------------------------------------------------------------
 
     "urban_modern": BlockStyleConfig(
@@ -96,20 +107,32 @@ STYLES = {
             },
         ),
     ),
+
     # -------------------------------------------------------------------------
-    # BUILDING-BASED
+    # BUILDING ENGINE
     # -------------------------------------------------------------------------
 
     "vintage_atlas": BuildingStyleConfig(
         background="#E6D3B3",
+
         building_colors=[
             "#C9B28F",
             "#BFA37C",
             "#D7C2A4",
             "#A88F6C",
         ],
-        road="#5C3D23",
+        building_edge="#5C3D23",
+        building_edge_width=0.15,
+
+        green="#C9D8B6",
+        green_edge="#5C3D23",
+        green_edge_width=0.1,
+
         water="#8FA6AA",
+        water_edge="#5C3D23",
+        water_edge_width=0.1,
+
+        road="#5C3D23",
         road_style=RoadStyle(
             base_width=1.0,
             multipliers={
@@ -123,21 +146,32 @@ STYLES = {
 
     "pretty_buildings": BuildingStyleConfig(
         background="#F4F1EB",
+
         building_colors=[
-            "#F29F1F",  # élénk, de nem neon
-            "#E27A1F",  # meleg mid
-            "#C65A2A",  # mély terrakotta
-            "#D9BB8F",  # sötétített homok
-            "#F4B942",  # világos akcent
-            "#2F2F2F",  # ritka kontraszt
+            "#F29F1F",
+            "#E27A1F",
+            "#C65A2A",
+            "#D9BB8F",
+            "#F4B942",
+            "#2F2F2F",
         ],
-        road="#F4EFE6",
-        water="#CFE3EC",
+        building_edge="#6b5b4d",
+        building_edge_width=0.12,
+
+        green="#DADFCF",
+        green_edge="#DADFCF",
+        green_edge_width=0,
+
+        water="#8EC5E8",
+        water_edge="#8EC5E8",
+        water_edge_width=0,
+
+        road="#C9C9C9",
         road_style=RoadStyle(
-            base_width=1.2,
+            base_width=1.8,
             multipliers={
-                "minor": 0.6,
-                "local": 1.0,
+                "minor": 0.7,
+                "local": 1.3,
                 "arterial": 1.8,
                 "highway": 2.6,
             },
@@ -145,7 +179,7 @@ STYLES = {
     ),
 
     # -------------------------------------------------------------------------
-    # LINE-BASED
+    # LINE ENGINE
     # -------------------------------------------------------------------------
 
     "bw_minimal": LineStyleConfig(

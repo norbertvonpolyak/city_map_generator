@@ -22,7 +22,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="City Map Renderer – B Architecture (SVG pipeline)"
     )
 
-    p.add_argument("--size-key", default="50x50")
+    p.add_argument("--size-key", default="50x70")
     p.add_argument("--extent-m", type=int, default=2000) #48.13654710283969, 11.576770383227576
     p.add_argument("--dpi", type=int, default=300)
 
