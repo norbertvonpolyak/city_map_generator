@@ -8,6 +8,7 @@ from typing import Optional
 from pathlib import Path
 import random
 import math
+import hashlib
 
 import geopandas as gpd
 import matplotlib.pyplot as plt
@@ -42,6 +43,11 @@ def _classify_road(hw: str) -> str:
 
     return "minor"
 
+def _deterministic_color(geom, palette):
+    key = geom.wkb
+    h = hashlib.md5(key).hexdigest()
+    idx = int(h, 16) % len(palette)
+    return palette[idx]
 
 def render_map_block(
     *,
@@ -280,9 +286,9 @@ def render_map_block(
             zorder=1
         )
 
-    land_cells["color"] = [
-        random.choice(style_cfg.block_colors)
-        for _ in range(len(land_cells))
+    land_cells ["color"] = [
+        _deterministic_color (geom, style_cfg.block_colors)
+        for geom in land_cells.geometry
     ]
 
     land_cells.plot(
