@@ -18,38 +18,30 @@ from shapely.geometry import Point, box
 from shapely.ops import polygonize, unary_union
 
 from generator.specs import ProductSpec
-from generator.styles import get_style_config, BlockStyleConfig
+from generator.styles import get_style_config
 from generator.core.cache import load_or_build_geometry
 
-
-# =============================================================================
-# RESULT TYPE
-# =============================================================================
 
 @dataclass(frozen=True)
 class MapLayerResult:
     output_svg: Optional[Path]
 
 
-# =============================================================================
-# HELPERS
-# =============================================================================
-
 def _classify_road(hw: str) -> str:
+
     hw = str(hw)
 
     if hw in {"motorway", "trunk"}:
         return "highway"
+
     if hw in {"primary", "secondary", "tertiary"}:
         return "arterial"
+
     if hw in {"residential", "unclassified", "living_street"}:
         return "local"
+
     return "minor"
 
-
-# =============================================================================
-# BLOCK ENGINE
-# =============================================================================
 
 def render_map_block(
     *,
@@ -68,9 +60,6 @@ def render_map_block(
 
     style_cfg = get_style_config(palette_name)
 
-    if not isinstance(style_cfg, BlockStyleConfig):
-        raise TypeError(f"Style '{palette_name}' is not block-based.")
-
     inner_width_cm = spec.width_cm - 2
     inner_height_cm = spec.height_cm - 5
 
@@ -82,13 +71,7 @@ def render_map_block(
     half_height_m = spec.extent_m
     half_width_m = half_height_m * inner_ratio
 
-    dist_m = int(
-        math.ceil(math.sqrt(half_width_m**2 + half_height_m**2))
-    ) + 300
-
-    # -------------------------------------------------------------------------
-    # GEOMETRY (CACHED)
-    # -------------------------------------------------------------------------
+    dist_m = int(math.ceil(math.sqrt(half_width_m**2 + half_height_m**2))) + 300
 
     def _build_geometry():
 
@@ -106,7 +89,7 @@ def render_map_block(
 
         clip_rect = box(minx, miny, maxx, maxy)
 
-        ox.settings.timeout = 30
+        # ROADS
 
         G = ox.graph_from_point(
             (center_lat, center_lon),
@@ -116,51 +99,154 @@ def render_map_block(
         )
 
         edges = ox.graph_to_gdfs(G, nodes=False, edges=True)
+
         edges_p = ox.projection.project_gdf(edges)
+
         edges_p = gpd.clip(
             edges_p,
             gpd.GeoSeries([clip_rect], crs=edges_p.crs)
         )
-        edges_p = edges_p[~edges_p.is_empty]
+
         edges_p["road_class"] = edges_p["highway"].apply(_classify_road)
 
-        water = ox.features_from_point(
-            (center_lat, center_lon),
-            tags={"natural": "water"},
-            dist=dist_m,
+        # WATER (natural only)
+
+        clip_gdf = gpd.GeoDataFrame(
+            geometry=[clip_rect],
+            crs=edges_p.crs
         )
 
-        if len(water) > 0:
-            water_p = ox.projection.project_gdf(water)
+        clip_wgs = clip_gdf.to_crs("EPSG:4326").geometry.iloc[0]
+
+        water = ox.features_from_polygon(
+            clip_wgs,
+            tags={
+                "natural": "water",
+                "waterway": "riverbank"
+            }
+        )
+
+        if water is None or len(water) == 0:
+            water_p = gpd.GeoDataFrame(geometry=[], crs=edges_p.crs)
+
+        else:
+
+            water = water[water.geometry.notnull()]
+            water_p = water.to_crs(edges_p.crs)
+
+            water_p = water_p[
+                water_p.geom_type.isin(["Polygon", "MultiPolygon"])
+            ]
+
             water_p = gpd.clip(
                 water_p,
-                gpd.GeoSeries([clip_rect], crs=water_p.crs)
+                gpd.GeoSeries([clip_rect], crs=edges_p.crs)
             )
-        else:
-            water_p = None
+
+        # COASTLINE
+
+        try:
+
+            coast = ox.features_from_polygon(
+                clip_wgs,
+                tags={"natural": "coastline"}
+            )
+
+        except:
+
+            coast = None
+
+        sea_poly = None
+
+        if coast is not None and len(coast) > 0:
+
+            coast = coast[coast.geometry.notnull()]
+            coast_p = coast.to_crs(edges_p.crs)
+
+            coast_lines = coast_p[
+                coast_p.geom_type.isin(["LineString", "MultiLineString"])
+            ]
+
+            merged = unary_union(
+                list(coast_lines.geometry.values) +
+                [clip_rect.boundary]
+            )
+
+            polys = list(polygonize(merged))
+
+            for p in polys:
+
+                if p.contains(center_p):
+
+                    land_poly = p
+                    sea_poly = clip_rect.difference(land_poly)
+                    break
+
+        if sea_poly is not None:
+
+            water_p = gpd.GeoDataFrame(
+                geometry=list(water_p.geometry) + [sea_poly],
+                crs=edges_p.crs
+            )
+
+        # LARGE WATER ONLY (remove pools)
+
+        large_water = water_p[water_p.area > 2000]
+
+        # POLYGONIZE INPUT
 
         boundary = clip_rect.boundary
-        merged = unary_union(list(edges_p.geometry) + [boundary])
+
+        lines = list(edges_p.geometry.values) + [boundary]
+
+        if len(large_water) > 0:
+
+            water_union = unary_union(large_water.geometry)
+
+            lines += [water_union.boundary]
+
+        merged = unary_union(lines)
+
         polygons = list(polygonize(merged))
 
-        blocks_gdf = gpd.GeoDataFrame(
+        cells = gpd.GeoDataFrame(
             geometry=polygons,
             crs=edges_p.crs
         )
 
-        blocks_gdf = gpd.clip(
-            blocks_gdf,
-            gpd.GeoSeries([clip_rect], crs=blocks_gdf.crs)
+        cells = gpd.clip(
+            cells,
+            gpd.GeoSeries([clip_rect], crs=cells.crs)
         )
 
-        if water_p is not None and len(water_p) > 0:
-            water_union = water_p.unary_union
-            blocks_gdf["geometry"] = blocks_gdf.geometry.difference(water_union)
+        # classify water cells
+
+        if len(large_water) > 0:
+
+            water_union = unary_union(large_water.geometry)
+
+            water_union = unary_union (large_water.geometry)
+
+            def is_water_cell (poly):
+
+                inter = poly.intersection (water_union)
+
+                if inter.is_empty:
+                    return False
+
+                ratio = inter.area / poly.area
+
+                return ratio > 0.5
+
+            cells ["is_water"] = cells.geometry.apply (is_water_cell)
+
+        else:
+
+            cells["is_water"] = False
 
         return {
-            "blocks": blocks_gdf,
+            "cells": cells,
             "roads": edges_p,
-            "water": water_p,
             "bounds": (minx, maxx, miny, maxy),
         }
 
@@ -172,87 +258,78 @@ def render_map_block(
         builder_func=_build_geometry,
     )
 
-    blocks_gdf = geometry_data["blocks"]
+    cells = geometry_data["cells"]
     edges_p = geometry_data["roads"]
-    water_p = geometry_data["water"]
+
     minx, maxx, miny, maxy = geometry_data["bounds"]
 
-    if len(blocks_gdf) > 0:
-        blocks_gdf["color"] = np.random.choice(
-            style_cfg.block_colors,
-            size=len(blocks_gdf)
-        )
+    fig, ax = plt.subplots(
+        figsize=(fig_w_in, fig_h_in),
+        dpi=300
+    )
 
-    fig = plt.figure(figsize=(fig_w_in, fig_h_in))
-    ax = fig.add_axes([0, 0, 1, 1])
+    water_cells = cells[cells["is_water"]]
+    land_cells = cells[~cells["is_water"]]
 
-    fig.patch.set_facecolor(style_cfg.background)
-    ax.set_facecolor(style_cfg.background)
+    if len(water_cells) > 0:
 
-    if water_p is not None and len(water_p) > 0:
-        water_p.plot(ax=ax, color=style_cfg.water, linewidth=0, zorder=1)
-
-    if len(blocks_gdf) > 0:
-        blocks_gdf.plot(
+        water_cells.plot(
             ax=ax,
-            color=blocks_gdf["color"],
-            linewidth=0,
-            zorder=5,
+            color=style_cfg.water,
+            edgecolor="none",
+            zorder=1
         )
 
-    road_width_base = style_cfg.road_style.base_width
+    land_cells["color"] = [
+        random.choice(style_cfg.block_colors)
+        for _ in range(len(land_cells))
+    ]
+
+    land_cells.plot(
+        ax=ax,
+        color=land_cells["color"],
+        edgecolor="none",
+        zorder=2
+    )
+
+    base_width = style_cfg.road_style.base_width
     multipliers = style_cfg.road_style.multipliers
 
-    for cls, mult in multipliers.items ():
+    for road_class, m in multipliers.items():
 
-        subset = edges_p [edges_p ["road_class"] == cls]
+        subset = edges_p[edges_p["road_class"] == road_class]
 
-        if len (subset) == 0:
+        if len(subset) == 0:
             continue
 
-        if cls == "highway":
-            color = "#FFFFFF"
-        elif cls == "arterial":
-            color = "#F4F1E8"
-        elif cls == "local":
-            color = "#EFEBDD"
-        else:
-            color = "#E6E2D6"
-
-        subset.plot (
+        subset.plot(
             ax=ax,
-            color=color,
-            linewidth=road_width_base * mult,
-            zorder=20,
+            linewidth=base_width * m,
+            color=style_cfg.road,
+            zorder=3
         )
 
     ax.set_xlim(minx, maxx)
     ax.set_ylim(miny, maxy)
     ax.set_axis_off()
 
-    output_path = None
+    plt.tight_layout()
+
+    output_svg = None
 
     if output_dir:
-        output_dir = Path(output_dir)
+
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        if preview_mode:
-            output_path = output_dir / f"{filename_prefix}.png"
-            fig.savefig(
-                output_path,
-                format="png",
-                dpi=140,
-                bbox_inches="tight",
-                pad_inches=0,
-            )
-        else:
-            output_path = output_dir / f"{filename_prefix}.svg"
-            fig.savefig(
-                output_path,
-                format="svg",
-                bbox_inches=None
-            )
+        output_svg = output_dir / f"{filename_prefix}.svg"
+
+        fig.savefig(
+            output_svg,
+            format="svg",
+            bbox_inches="tight",
+            pad_inches=0,
+        )
 
     plt.close(fig)
 
-    return MapLayerResult(output_svg=output_path)
+    return MapLayerResult(output_svg=output_svg)

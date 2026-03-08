@@ -31,7 +31,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--center-lon", type=float,
                    default=11.576770383227576)
 
-    p.add_argument("--palette", default="pretty_buildings")
+    p.add_argument("--palette", default="urban_modern")
     p.add_argument("--seed", type=int, default=42)
 
     p.add_argument("--title", type=str,
