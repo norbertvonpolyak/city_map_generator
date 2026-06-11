@@ -44,6 +44,7 @@ def render_product(
     subtitle: str,
     preview_mode: bool = False,
     order_id: str | None = None,
+    use_cache: bool = True,
 ):
 
     if style_name not in STYLE_REGISTRY:
@@ -80,6 +81,7 @@ def render_product(
             palette_name=style_name,
             preview_mode=preview_mode,
             filename_prefix=filename_prefix,
+            use_cache=use_cache,
         )
 
     elif style_def.engine == EngineType.BUILDING:

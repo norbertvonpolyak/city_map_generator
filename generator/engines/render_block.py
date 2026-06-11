@@ -59,6 +59,7 @@ def render_map_block(
     seed: int = 42,
     filename_prefix: str = "map_layer",
     preview_mode: bool = False,
+    use_cache: bool = True,
 ) -> MapLayerResult:
 
     random.seed(seed)
@@ -115,7 +116,7 @@ def render_map_block(
 
         edges_p["road_class"] = edges_p["highway"].apply(_classify_road)
 
-        # WATER (natural only)
+        # WATER (broader OSM tags for sea/harbor/basin coverage)
 
         clip_gdf = gpd.GeoDataFrame(
             geometry=[clip_rect],
@@ -124,13 +125,24 @@ def render_map_block(
 
         clip_wgs = clip_gdf.to_crs("EPSG:4326").geometry.iloc[0]
 
-        water = ox.features_from_polygon(
-            clip_wgs,
-            tags={
-                "natural": "water",
-                "waterway": "riverbank"
-            }
-        )
+        try:
+            water = ox.features_from_polygon(
+                clip_wgs,
+                tags={
+                    "natural": ["water", "bay", "strait"],
+                    "water": True,
+                    "waterway": ["riverbank", "canal"],
+                    "landuse": ["basin", "reservoir"],
+                }
+            )
+        except Exception:
+            water = ox.features_from_polygon(
+                clip_wgs,
+                tags={
+                    "natural": "water",
+                    "waterway": "riverbank"
+                }
+            )
 
         if water is None or len(water) == 0:
             water_p = gpd.GeoDataFrame(geometry=[], crs=edges_p.crs)
@@ -195,9 +207,51 @@ def render_map_block(
                 crs=edges_p.crs
             )
 
-        # LARGE WATER ONLY (remove pools)
+        island_union = None
 
-        large_water = water_p[water_p.area > 2000]
+        # ISLAND OVERRIDE
+        # Remove explicit island polygons from water surfaces so they are
+        # always rendered as land parcels.
+        try:
+            islands = ox.features_from_polygon(
+                clip_wgs,
+                tags={
+                    "place": ["island", "islet"],
+                    "natural": "island",
+                },
+            )
+        except Exception:
+            islands = None
+
+        if islands is not None and len(islands) > 0 and len(water_p) > 0:
+            islands = islands[islands.geometry.notnull()]
+            islands_p = islands.to_crs(edges_p.crs)
+            islands_p = islands_p[
+                islands_p.geom_type.isin(["Polygon", "MultiPolygon"])
+            ]
+
+            if len(islands_p) > 0:
+                islands_p = gpd.clip(
+                    islands_p,
+                    gpd.GeoSeries([clip_rect], crs=edges_p.crs)
+                )
+
+            if len(islands_p) > 0:
+                island_union = unary_union(islands_p.geometry)
+                water_p = water_p.copy()
+                water_p["geometry"] = water_p.geometry.apply(
+                    lambda geom: geom.difference(island_union)
+                )
+                water_p = water_p[
+                    water_p.geometry.notnull() & (~water_p.geometry.is_empty)
+                ]
+                water_p = water_p[
+                    water_p.geom_type.isin(["Polygon", "MultiPolygon"])
+                ]
+
+        # Remove tiny artifacts but keep medium harbor fragments.
+
+        large_water = water_p[water_p.area > 300]
 
         # POLYGONIZE INPUT
 
@@ -230,25 +284,48 @@ def render_map_block(
         if len(large_water) > 0:
 
             water_union = unary_union(large_water.geometry)
+            # Small expansion helps fragmented shore segments, but only when
+            # there is already true (unbuffered) water overlap.
+            water_mask = water_union.buffer(5)
 
-            water_union = unary_union (large_water.geometry)
+            def is_water_cell(poly):
 
-            def is_water_cell (poly):
-
-                inter = poly.intersection (water_union)
-
-                if inter.is_empty:
+                raw_inter = poly.intersection(water_union)
+                if raw_inter.is_empty:
+                    # Never classify as water from buffered overlap only.
                     return False
 
-                ratio = inter.area / poly.area
+                poly_area = poly.area
+                if poly_area <= 0:
+                    return False
 
-                return ratio > 0.5
+                raw_ratio = raw_inter.area / poly_area
+                if raw_ratio > 0.5:
+                    return True
 
-            cells ["is_water"] = cells.geometry.apply (is_water_cell)
+                buffered_inter = poly.intersection(water_mask)
+                if buffered_inter.is_empty:
+                    return False
+
+                buffered_ratio = buffered_inter.area / poly_area
+                return raw_ratio > 0.03 and buffered_ratio > 0.2
+
+            cells["is_water"] = cells.geometry.apply(is_water_cell)
 
         else:
 
             cells["is_water"] = False
+
+        if island_union is not None:
+
+            def is_island_cell(poly):
+                inter = poly.intersection(island_union)
+                if inter.is_empty or poly.area <= 0:
+                    return False
+                return (inter.area / poly.area) > 0.15
+
+            island_cells = cells.geometry.apply(is_island_cell)
+            cells.loc[island_cells, "is_water"] = False
 
         return {
             "cells": cells,
@@ -256,13 +333,18 @@ def render_map_block(
             "bounds": (minx, maxx, miny, maxy),
         }
 
-    geometry_data = load_or_build_geometry(
-        cache_prefix="block",
-        center_lat=center_lat,
-        center_lon=center_lon,
-        extent_m=spec.extent_m,
-        builder_func=_build_geometry,
-    )
+    if use_cache:
+        geometry_data = load_or_build_geometry(
+            # Bump cache key so previous misclassified geometry is not reused.
+            cache_prefix="block_v6_water",
+            center_lat=center_lat,
+            center_lon=center_lon,
+            extent_m=spec.extent_m,
+            builder_func=_build_geometry,
+        )
+    else:
+        print("[CACHE] Disabled: rebuilding geometry")
+        geometry_data = _build_geometry()
 
     cells = geometry_data["cells"]
     edges_p = geometry_data["roads"]

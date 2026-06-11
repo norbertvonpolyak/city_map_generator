@@ -33,6 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p.add_argument("--palette", default="urban_modern")
     p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--no-cache", action="store_true")
 
     p.add_argument("--title", type=str,
                    default="MÜNCHEN")
@@ -110,6 +111,7 @@ def main() -> None:
         subtitle=subtitle_text,
         preview_mode=False,
         order_id="DESIGN_TEST",  # ← EZ KELL
+        use_cache=not args.no_cache,
     )
 
     print("Preview output:", output_path)
