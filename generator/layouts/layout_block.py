@@ -10,7 +10,6 @@ from reportlab.lib.units import cm
 from reportlab.lib import colors
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfbase import pdfmetrics
-from reportlab.lib.utils import ImageReader
 from reportlab.graphics import renderPDF
 
 from svglib.svglib import svg2rlg
@@ -199,33 +198,6 @@ def compose_layout_block(
         subtitle_font_size,
         tracking=tracking_value,
     )
-
-    # ---------------------------------------------------------------------
-    # LOGO
-    # ---------------------------------------------------------------------
-
-    logo_path = project_root / "Logo" / "dotty_map_logo.png"
-
-    if logo_path.exists():
-        logo = ImageReader(str(logo_path))
-        logo_original_width, logo_original_height = logo.getSize()
-
-        logo_height = strip_height * 0.6
-        logo_width = logo_height * (
-            logo_original_width / logo_original_height
-        )
-
-        logo_x = left_margin
-        logo_y = (strip_height / 2) - (logo_height / 2)
-
-        c.drawImage(
-            logo,
-            logo_x,
-            logo_y,
-            width=logo_width,
-            height=logo_height,
-            mask="auto",
-        )
 
     # ---------------------------------------------------------------------
     # FINALIZE

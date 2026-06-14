@@ -29,4 +29,9 @@ data/*
 
 batch_render_palettes.py
 
+# Hero batch experiments
+batch_render_cities_hero.py
+test.py
 
+# Temporary render outputs
+output_batch_tmp/

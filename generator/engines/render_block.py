@@ -26,6 +26,7 @@ from generator.core.cache import load_or_build_geometry
 @dataclass(frozen=True)
 class MapLayerResult:
     output_svg: Optional[Path]
+    output_png: Optional[Path] = None
 
 
 def _classify_road(hw: str) -> str:
@@ -60,6 +61,7 @@ def render_map_block(
     filename_prefix: str = "map_layer",
     preview_mode: bool = False,
     use_cache: bool = True,
+    output_png_path: Optional[Path] = None,
 ) -> MapLayerResult:
 
     random.seed(seed)
@@ -149,7 +151,7 @@ def render_map_block(
 
         else:
 
-            water = water[water.geometry.notnull()]
+            water = water[(~water.geometry.isna()) & (~water.geometry.is_empty)]
             water_p = water.to_crs(edges_p.crs)
 
             water_p = water_p[
@@ -178,7 +180,7 @@ def render_map_block(
 
         if coast is not None and len(coast) > 0:
 
-            coast = coast[coast.geometry.notnull()]
+            coast = coast[(~coast.geometry.isna()) & (~coast.geometry.is_empty)]
             coast_p = coast.to_crs(edges_p.crs)
 
             coast_lines = coast_p[
@@ -224,7 +226,7 @@ def render_map_block(
             islands = None
 
         if islands is not None and len(islands) > 0 and len(water_p) > 0:
-            islands = islands[islands.geometry.notnull()]
+            islands = islands[(~islands.geometry.isna()) & (~islands.geometry.is_empty)]
             islands_p = islands.to_crs(edges_p.crs)
             islands_p = islands_p[
                 islands_p.geom_type.isin(["Polygon", "MultiPolygon"])
@@ -243,7 +245,7 @@ def render_map_block(
                     lambda geom: geom.difference(island_union)
                 )
                 water_p = water_p[
-                    water_p.geometry.notnull() & (~water_p.geometry.is_empty)
+                    (~water_p.geometry.isna()) & (~water_p.geometry.is_empty)
                 ]
                 water_p = water_p[
                     water_p.geom_type.isin(["Polygon", "MultiPolygon"])
@@ -357,7 +359,7 @@ def render_map_block(
     )
 
     water_cells = cells[cells["is_water"]]
-    land_cells = cells[~cells["is_water"]]
+    land_cells = cells[~cells["is_water"]].copy()
 
     if len(water_cells) > 0:
 
@@ -404,6 +406,7 @@ def render_map_block(
     plt.tight_layout()
 
     output_svg = None
+    output_png = None
 
     if output_dir:
 
@@ -418,6 +421,17 @@ def render_map_block(
             pad_inches=0,
         )
 
+    if output_png_path is not None:
+        output_png_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(
+            output_png_path,
+            format="png",
+            dpi=spec.dpi,
+            bbox_inches="tight",
+            pad_inches=0,
+        )
+        output_png = output_png_path
+
     plt.close(fig)
 
-    return MapLayerResult(output_svg=output_svg)
+    return MapLayerResult(output_svg=output_svg, output_png=output_png)

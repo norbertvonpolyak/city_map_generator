@@ -45,6 +45,7 @@ def render_product(
     preview_mode: bool = False,
     order_id: str | None = None,
     use_cache: bool = True,
+    output_png_path: Path | None = None,
 ):
 
     if style_name not in STYLE_REGISTRY:
@@ -82,6 +83,7 @@ def render_product(
             preview_mode=preview_mode,
             filename_prefix=filename_prefix,
             use_cache=use_cache,
+            output_png_path=output_png_path,
         )
 
     elif style_def.engine == EngineType.BUILDING:
@@ -126,7 +128,7 @@ def render_product(
 
     layout_func = ENGINE_LAYOUT_MAP[style_def.engine]
 
-    final_pdf_path = layout_func(
+    layout_result = layout_func(
         spec=spec,
         map_svg_path=map_output_path,
         output_dir=output_dir,
@@ -137,4 +139,7 @@ def render_product(
         #filename_prefix=filename_prefix,
     )
 
-    return final_pdf_path
+    if hasattr(layout_result, "output_pdf"):
+        return layout_result.output_pdf
+
+    return layout_result
