@@ -496,6 +496,127 @@ print(f"Land cells: {int((~cells['is_water']).sum())}")
 
 ---
 
+## Issue: Opposite Bank / Open Sea Rendered as Land Blocks (v10 Multi-Landmass Fix)
+
+### Problem Description
+
+In coastal cities whose frame contains **more than one landmass** — a strait or
+river splitting the city (Istanbul / Bosphorus, New York / Hudson) or an
+archipelago (Helsinki, Stockholm) — large water areas were rendered as
+parcel-colored **land blocks** with roads drawn on top, instead of solid water.
+
+Visual symptom: the opposite bank of a strait, or a big open bay/gulf, appears
+as one giant orange/yellow block instead of teal water.
+
+### Root Cause
+
+The coastline step polygonizes the OSM `natural=coastline` lines together with
+the frame boundary, producing several closed regions. The original logic kept
+**only the region containing the map center** as land and flooded everything
+else as sea:
+
+```python
+if p.contains(center_p):
+    land_poly = p
+    sea_poly = clip_rect.difference(land_poly)   # everything else = sea
+    break
+```
+
+This is wrong in **both** directions when there are multiple landmasses:
+- a genuine second landmass (Istanbul's Asian side) is **not** connected to the
+  center, so it got flooded as sea — water with streets on top;
+- conversely, when later tweaked, an entire open gulf could be kept as land.
+
+### Solution Implemented
+
+**File:** `generator/engines/render_block.py` (COASTLINE block)
+
+Each coastline-bounded region is now classified **individually** as land or sea
+by **road-length density** (metres of road per m² of region):
+
+```python
+roads_union = unary_union(list(edges_p.geometry.values)) if len(edges_p) > 0 else None
+
+sea_regions = []
+for p in polys:
+    if p.contains(center_p):
+        continue  # region with the map center is always land
+
+    density = 0.0
+    if roads_union is not None and p.area > 0:
+        road_inside = p.intersection(roads_union)
+        if not road_inside.is_empty:
+            density = road_inside.length / p.area
+
+    if density < 1e-2:          # below threshold -> open water
+        sea_regions.append(p)
+
+if sea_regions:
+    sea_poly = unary_union(sea_regions)
+```
+
+**Why it works (measured densities, 3000 m extent):**
+- Dense built-up land: ~3e-2 … 9e-2 m/m²
+- Map-center mainland: ~6e-2 m/m²
+- Open sea / gulf (only piers, breakwaters, shore footpaths): ~2.5e-3 m/m² or lower
+
+The `1e-2` threshold sits in the wide gap between sea and land. Islands occupy
+their **own** coastline regions (the sea face has a hole where each island sits),
+so flagging a sea region never turns an island into water. The existing
+island-override still runs afterwards as a final safety net.
+
+### Critical "Do NOT" Notes (avoid re-introducing past bugs)
+
+- **Do NOT** revert to `sea_poly = clip_rect.difference(land_poly)` — that is the
+  original multi-landmass bug.
+- **Do NOT** buffer the whole road network (e.g. `roads_union.buffer(120)`) and
+  intersect it per region — it is far too slow and **froze the render for >20 min**.
+- **Do NOT** lower the threshold to `2e-3` — Helsinki's open gulf measures
+  ~2.46e-3 and leaks through as land.
+- Ferries / vessel routes are **not** a factor: `network_type="all"` only pulls
+  `highway=*` ways (0 ferry edges). Don't chase ferry routes.
+
+### Cache Invalidation
+
+Cache prefix bumped to `block_v10_density`. Older cached geometry
+(`block_v6_water`, etc.) holds the **old misclassification** — re-render affected
+cities with `--no-cache`, or clear `cache/`, or run the batch **without**
+`--skip-existing` to rebuild.
+
+### How to Verify
+
+```bash
+# Strait-split city (Asian side must be land, Bosphorus + Marmara must be water):
+python main.py --size-key 50x50 --extent-m 3000 \
+  --center-lat 41.0082 --center-lon 28.9784 \
+  --palette urban_modern --title "ISTANBUL" --output-dir output --no-cache
+
+# Archipelago (gulf must be water, every island must stay parcel-colored):
+python main.py --size-key 50x50 --extent-m 3000 \
+  --center-lat 60.1699 --center-lon 24.9384 \
+  --palette urban_modern --title "HELSINKI" --output-dir output --no-cache
+```
+
+### 🔁 If This Problem Recurs — What to Prompt
+
+If a coastal city again shows water rendered as land blocks (or land rendered as
+water), paste this to the assistant:
+
+> In `generator/engines/render_block.py`, the per-region land/sea classification
+> in the COASTLINE block is misclassifying regions for `<CITY>` (lat `<LAT>`,
+> lon `<LON>`, extent `<EXTENT_m>`). Water is showing as land blocks (or land as
+> water). Add a temporary diagnostic that prints, for each polygonized coastline
+> region, its `area`, road-length `density` (`region ∩ roads_union`.length /
+> region.area), and whether it contains the center — then adjust the `1e-2`
+> density threshold so the offending region lands on the correct side of the gap,
+> **without** buffering the whole road network and **without** reverting to
+> `clip_rect.difference(land_poly)`. Bump the `block_v##_density` cache prefix and
+> re-render with `--no-cache`.
+
+This reproduces the exact debugging path used for the v10 fix.
+
+---
+
 # �🚀 Roadmap
 
 ## 1. SVG / DXF Export
