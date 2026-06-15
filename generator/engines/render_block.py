@@ -192,15 +192,62 @@ def render_map_block(
                 [clip_rect.boundary]
             )
 
-            polys = list(polygonize(merged))
+            polys = [
+                p for p in polygonize(merged)
+                if (not p.is_empty) and p.area > 0
+            ]
 
-            for p in polys:
+            if polys:
 
-                if p.contains(center_p):
+                # Classify EACH coastline-bounded region as land or sea.
+                #
+                # The previous logic kept ONLY the region containing the map
+                # center as land and flooded every other region as sea. That
+                # breaks any city whose frame contains more than one landmass:
+                # the opposite bank of a strait/river (e.g. Istanbul's Asian
+                # side) or the separate islands of an archipelago
+                # (e.g. Stockholm, Helsinki) were drawn as water with streets
+                # sitting on top.
+                #
+                # A region is LAND when its road-length density (metres of road
+                # per m^2 of region) is high. Measured values:
+                #   * dense built-up land  ~3e-2 .. 9e-2 m/m^2
+                #   * map-center landmass  ~6e-2 m/m^2
+                #   * open sea (gulf) with piers / breakwaters / shore paths
+                #                          ~2.5e-3 m/m^2 or lower
+                # Islands sit in their OWN coastline regions (polygonize gives
+                # the sea face a hole where each island is), so flagging a sea
+                # region never affects island land. A threshold of 1e-2 sits in
+                # the wide gap between sea (<=~2.5e-3) and land (>=~3e-2) and is
+                # robust without any expensive buffering (buffering the whole
+                # road network is far too slow and froze the render).
 
-                    land_poly = p
-                    sea_poly = clip_rect.difference(land_poly)
-                    break
+                roads_union = (
+                    unary_union(list(edges_p.geometry.values))
+                    if len(edges_p) > 0 else None
+                )
+
+                sea_regions = []
+
+                for p in polys:
+
+                    if p.contains(center_p):
+                        # Region with the map center is always land.
+                        continue
+
+                    density = 0.0
+                    if roads_union is not None and p.area > 0:
+                        road_inside = p.intersection(roads_union)
+                        if not road_inside.is_empty:
+                            density = road_inside.length / p.area
+
+                    # Built-up land: dense road network.
+                    # Open sea: only sparse pier/shore coverage -> below thresh.
+                    if density < 1e-2:
+                        sea_regions.append(p)
+
+                if sea_regions:
+                    sea_poly = unary_union(sea_regions)
 
         if sea_poly is not None:
 
@@ -338,7 +385,7 @@ def render_map_block(
     if use_cache:
         geometry_data = load_or_build_geometry(
             # Bump cache key so previous misclassified geometry is not reused.
-            cache_prefix="block_v6_water",
+            cache_prefix="block_v10_density",
             center_lat=center_lat,
             center_lon=center_lon,
             extent_m=spec.extent_m,
