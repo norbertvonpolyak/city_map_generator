@@ -6,6 +6,7 @@ import type { UMCPreviewPoint } from '@umc-shared/types'
 import type { UMCPreviewViewportState } from '@umc-shared/types'
 import type { UMCPosterConfig } from '@umc-shared/types'
 import type { UMCModuleKind } from '@umc-shared/types'
+import { generateCityPreview as fetchCityPreview } from '../services/cityPreviewApi'
 
 export interface ConfiguratorState {
   activeModule: UMCModuleKind
@@ -14,6 +15,9 @@ export interface ConfiguratorState {
   previewObjects: UMCPreviewObject[]
   selectedObjectId: string | null
   placementType: UMCPreviewObjectType
+  cityPreviewSvg: string | null
+  cityPreviewStatus: 'idle' | 'loading' | 'ready' | 'city-not-found' | 'failed'
+  cityPreviewError: string | null
   setActiveModule: (moduleKind: UMCModuleKind) => void
   setTitle: (title: string) => void
   setLocationQuery: (query: string) => void
@@ -23,6 +27,7 @@ export interface ConfiguratorState {
   setPlacementType: (type: UMCPreviewObjectType) => void
   setPreviewViewport: (viewport: UMCPreviewViewportState) => void
   resetPreviewViewport: () => void
+  generateCityPreview: () => Promise<void>
   addObjectAtPoint: (type: UMCPreviewObjectType, point: UMCPreviewPoint) => void
   moveObject: (id: string, point: UMCPreviewPoint) => void
   selectObject: (id: string | null) => void
@@ -99,6 +104,9 @@ export const useConfiguratorState = (): ConfiguratorState => {
   })
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(null)
   const [placementType, setPlacementType] = useState<UMCPreviewObjectType>('pin')
+  const [cityPreviewSvg, setCityPreviewSvg] = useState<string | null>(null)
+  const [cityPreviewStatus, setCityPreviewStatus] = useState<'idle' | 'loading' | 'ready' | 'city-not-found' | 'failed'>('idle')
+  const [cityPreviewError, setCityPreviewError] = useState<string | null>(null)
 
   const setActiveModule = (moduleKind: UMCModuleKind) => {
     setActiveModuleState(moduleKind)
@@ -106,6 +114,9 @@ export const useConfiguratorState = (): ConfiguratorState => {
     setPreviewViewportState(defaultViewport)
     setPreviewObjects(createModuleMockObjects(moduleKind))
     setSelectedObjectId(null)
+    setCityPreviewSvg(null)
+    setCityPreviewStatus('idle')
+    setCityPreviewError(null)
   }
 
   const setTitle = (title: string) => {
@@ -117,6 +128,11 @@ export const useConfiguratorState = (): ConfiguratorState => {
       ...current,
       location: { ...current.location, query },
     }))
+    if (activeModule === 'city-map') {
+      setCityPreviewSvg(null)
+      setCityPreviewStatus('idle')
+      setCityPreviewError(null)
+    }
   }
 
   const setTemplateId = (templateId: string) => {
@@ -149,6 +165,34 @@ export const useConfiguratorState = (): ConfiguratorState => {
 
   const resetPreviewViewport = () => {
     setPreviewViewportState(defaultViewport)
+  }
+
+  const generateCityPreview = async () => {
+    if (activeModule !== 'city-map') {
+      return
+    }
+
+    const city = activeConfig.location.query.trim()
+    if (!city) {
+      setCityPreviewSvg(null)
+      setCityPreviewStatus('failed')
+      setCityPreviewError('Enter a city name first.')
+      return
+    }
+
+    setCityPreviewStatus('loading')
+    setCityPreviewError(null)
+
+    try {
+      const svg = await fetchCityPreview({ city, style: 'minimal' })
+      setCityPreviewSvg(svg)
+      setCityPreviewStatus('ready')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Preview Generation Failed'
+      setCityPreviewSvg(null)
+      setCityPreviewError(message)
+      setCityPreviewStatus(message === 'City Not Found' ? 'city-not-found' : 'failed')
+    }
   }
 
   const addObjectAtPoint = (type: UMCPreviewObjectType, point: UMCPreviewPoint) => {
@@ -199,6 +243,9 @@ export const useConfiguratorState = (): ConfiguratorState => {
       previewObjects,
       selectedObjectId,
       placementType,
+      cityPreviewSvg,
+      cityPreviewStatus,
+      cityPreviewError,
       setActiveModule,
       setTitle,
       setLocationQuery,
@@ -208,12 +255,23 @@ export const useConfiguratorState = (): ConfiguratorState => {
       setPlacementType,
       setPreviewViewport,
       resetPreviewViewport,
+      generateCityPreview,
       addObjectAtPoint,
       moveObject,
       selectObject,
       deleteObject,
       deleteSelectedObject,
     }),
-    [activeConfig, activeModule, placementType, previewObjects, previewViewport, selectedObjectId],
+    [
+      activeConfig,
+      activeModule,
+      cityPreviewError,
+      cityPreviewSvg,
+      cityPreviewStatus,
+      placementType,
+      previewObjects,
+      previewViewport,
+      selectedObjectId,
+    ],
   )
 }

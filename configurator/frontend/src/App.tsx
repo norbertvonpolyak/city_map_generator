@@ -8,6 +8,7 @@ function App() {
     setActiveModule,
     setTitle,
     setLocationQuery,
+    generateCityPreview,
     setTemplateId,
     setPaletteId,
     toggleObject,
@@ -15,6 +16,9 @@ function App() {
     previewObjects,
     selectedObjectId,
     placementType,
+    cityPreviewSvg,
+    cityPreviewStatus,
+    cityPreviewError,
     setPlacementType,
     setPreviewViewport,
     resetPreviewViewport,
@@ -32,6 +36,7 @@ function App() {
       onModuleChange={setActiveModule}
       onTitleChange={setTitle}
       onLocationChange={setLocationQuery}
+      onGenerateCityPreview={generateCityPreview}
       onTemplateChange={setTemplateId}
       onPaletteChange={setPaletteId}
       onObjectToggle={toggleObject}
@@ -39,6 +44,9 @@ function App() {
       previewObjects={previewObjects}
       selectedObjectId={selectedObjectId}
       placementType={placementType}
+      cityPreviewSvg={cityPreviewSvg}
+      cityPreviewStatus={cityPreviewStatus}
+      cityPreviewError={cityPreviewError}
       onPlacementTypeChange={setPlacementType}
       onPreviewViewportChange={setPreviewViewport}
       onPreviewViewportReset={resetPreviewViewport}

@@ -16,6 +16,8 @@ interface InteractiveCircularViewportProps {
   placementType: UMCPreviewObjectType
   selectedObjectId: string | null
   objects: UMCPreviewObject[]
+  cityPreviewSvg: string | null
+  cityPreviewStatus: 'idle' | 'loading' | 'ready' | 'city-not-found' | 'failed'
   onViewportChange: (viewport: UMCPreviewViewportState) => void
   onViewportReset: () => void
   onAddObject: (type: UMCPreviewObjectType, point: UMCPreviewPoint) => void
@@ -57,6 +59,8 @@ export const InteractiveCircularViewport = ({
   placementType,
   selectedObjectId,
   objects,
+  cityPreviewSvg,
+  cityPreviewStatus,
   onViewportChange,
   onViewportReset,
   onAddObject,
@@ -296,7 +300,39 @@ export const InteractiveCircularViewport = ({
               transformOrigin: '50% 50%',
             }}
           >
-            <ModuleMockMapLayer moduleKind={moduleKind} />
+            {moduleKind === 'city-map' ? (
+              <>
+                {cityPreviewSvg ? (
+                  <div
+                    className="umc-city-preview absolute inset-0 pointer-events-none"
+                    aria-hidden="true"
+                    dangerouslySetInnerHTML={{ __html: cityPreviewSvg }}
+                  />
+                ) : (
+                  <div className="absolute inset-0 flex items-center justify-center px-6 text-center pointer-events-none">
+                    {cityPreviewStatus === 'loading' ? (
+                      <div className="rounded-2xl border border-[var(--umc-border)] bg-[rgba(7,9,13,0.82)] px-5 py-4 text-sm text-[var(--umc-ivory-soft)] shadow-[0_20px_50px_rgba(0,0,0,0.35)]">
+                        Loading Preview...
+                      </div>
+                    ) : cityPreviewStatus === 'city-not-found' ? (
+                      <div className="rounded-2xl border border-[rgba(220,90,90,0.45)] bg-[rgba(110,28,28,0.4)] px-5 py-4 text-sm text-[rgb(242,183,183)] shadow-[0_20px_50px_rgba(0,0,0,0.35)]">
+                        City Not Found
+                      </div>
+                    ) : cityPreviewStatus === 'failed' ? (
+                      <div className="rounded-2xl border border-[rgba(220,90,90,0.45)] bg-[rgba(110,28,28,0.4)] px-5 py-4 text-sm text-[rgb(242,183,183)] shadow-[0_20px_50px_rgba(0,0,0,0.35)]">
+                        Preview Generation Failed
+                      </div>
+                    ) : (
+                      <div className="max-w-[18rem] rounded-2xl border border-[var(--umc-border)] bg-[rgba(7,9,13,0.82)] px-5 py-4 text-sm text-[var(--umc-ivory-soft)] shadow-[0_20px_50px_rgba(0,0,0,0.35)]">
+                        Generate Preview to render the real city SVG here.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            ) : (
+              <ModuleMockMapLayer moduleKind={moduleKind} />
+            )}
             <div className="absolute inset-[10%] rounded-full border border-dashed border-[rgba(233,226,212,0.2)]" />
             <div className="absolute inset-[23%] rounded-full border border-[rgba(201,171,120,0.18)]" />
 

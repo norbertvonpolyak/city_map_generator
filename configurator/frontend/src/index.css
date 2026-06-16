@@ -73,6 +73,18 @@ body {
 	background: linear-gradient(90deg, rgba(4, 5, 7, 0.08), rgba(4, 5, 7, 0.5));
 }
 
+.umc-city-preview {
+	width: 100%;
+	height: 100%;
+	overflow: hidden;
+}
+
+.umc-city-preview svg {
+	width: 100%;
+	height: 100%;
+	display: block;
+}
+
 .umc-orbit-slow {
 	animation: umcOrbitSlow 26s linear infinite;
 }

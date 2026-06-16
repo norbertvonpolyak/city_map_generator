@@ -21,6 +21,7 @@ interface ConfiguratorShellProps {
   onModuleChange: (moduleKind: UMCModuleKind) => void
   onTitleChange: (title: string) => void
   onLocationChange: (query: string) => void
+  onGenerateCityPreview: () => void | Promise<void>
   onTemplateChange: (templateId: string) => void
   onPaletteChange: (paletteId: string) => void
   onObjectToggle: (key: keyof UMCPosterConfig['objects']) => void
@@ -28,6 +29,9 @@ interface ConfiguratorShellProps {
   previewObjects: UMCPreviewObject[]
   selectedObjectId: string | null
   placementType: UMCPreviewObjectType
+  cityPreviewSvg: string | null
+  cityPreviewStatus: 'idle' | 'loading' | 'ready' | 'city-not-found' | 'failed'
+  cityPreviewError: string | null
   onPlacementTypeChange: (type: UMCPreviewObjectType) => void
   onPreviewViewportChange: (viewport: UMCPreviewViewportState) => void
   onPreviewViewportReset: () => void
@@ -44,6 +48,7 @@ export const ConfiguratorShell = ({
   onModuleChange,
   onTitleChange,
   onLocationChange,
+  onGenerateCityPreview,
   onTemplateChange,
   onPaletteChange,
   onObjectToggle,
@@ -51,6 +56,9 @@ export const ConfiguratorShell = ({
   previewObjects,
   selectedObjectId,
   placementType,
+  cityPreviewSvg,
+  cityPreviewStatus,
+  cityPreviewError,
   onPlacementTypeChange,
   onPreviewViewportChange,
   onPreviewViewportReset,
@@ -83,7 +91,14 @@ export const ConfiguratorShell = ({
 
           <div className="space-y-4 overflow-y-auto pr-1 md:max-h-[calc(100vh-220px)]">
             <ModuleSelectorSection activeModule={activeModule} onChange={onModuleChange} />
-            <LocationSection config={activeConfig} onLocationChange={onLocationChange} />
+            <LocationSection
+              config={activeConfig}
+              isCityModule={activeModule === 'city-map'}
+              onLocationChange={onLocationChange}
+              onGenerateCityPreview={onGenerateCityPreview}
+              cityPreviewStatus={cityPreviewStatus}
+              cityPreviewError={cityPreviewError}
+            />
             <TemplateSection config={activeConfig} onTemplateChange={onTemplateChange} />
             <StyleSection config={activeConfig} onPaletteChange={onPaletteChange} />
             <ObjectsSection config={activeConfig} onToggle={onObjectToggle} />
@@ -110,6 +125,8 @@ export const ConfiguratorShell = ({
               placementType={placementType}
               selectedObjectId={selectedObjectId}
               objects={previewObjects}
+              cityPreviewSvg={cityPreviewSvg}
+              cityPreviewStatus={cityPreviewStatus}
               onViewportChange={onPreviewViewportChange}
               onViewportReset={onPreviewViewportReset}
               onAddObject={onAddPreviewObject}
