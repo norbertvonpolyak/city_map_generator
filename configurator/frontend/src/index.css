@@ -1,0 +1,129 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+:root {
+	--umc-bg-ink: #040507;
+	--umc-bg-night: #07090d;
+	--umc-ivory: #e9e2d4;
+	--umc-ivory-soft: #b7af9f;
+	--umc-gold: #c9ab78;
+	--umc-gold-soft: #bda07a;
+	--umc-aqua: #7eebe2;
+	--umc-border: rgba(220, 207, 184, 0.16);
+	--umc-panel: linear-gradient(165deg, rgba(6, 8, 12, 0.94), rgba(10, 12, 18, 0.82));
+	--umc-panel-soft: rgba(11, 14, 21, 0.62);
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+	margin: 0;
+	min-height: 100%;
+}
+
+body {
+	font-family: 'Manrope', 'Segoe UI', sans-serif;
+	color: var(--umc-ivory);
+	background: var(--umc-bg-ink);
+	text-rendering: optimizeLegibility;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+.umc-serif {
+	font-family: 'Cormorant Garamond', Georgia, serif;
+	letter-spacing: 0.01em;
+}
+
+.umc-background {
+	background:
+		radial-gradient(circle at 14% 22%, rgba(201, 171, 120, 0.22), transparent 42%),
+		radial-gradient(circle at 86% 12%, rgba(126, 235, 226, 0.16), transparent 38%),
+		radial-gradient(circle at 70% 88%, rgba(156, 96, 58, 0.2), transparent 48%),
+		linear-gradient(165deg, var(--umc-bg-night), var(--umc-bg-ink) 58%);
+}
+
+.umc-background::before,
+.umc-background::after {
+	content: '';
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+}
+
+.umc-background::before {
+	background-image:
+		radial-gradient(circle, rgba(233, 226, 212, 0.35) 1px, transparent 1.7px),
+		radial-gradient(circle, rgba(201, 171, 120, 0.22) 1px, transparent 2px);
+	background-size:
+		150px 150px,
+		220px 220px;
+	background-position:
+		0 0,
+		40px 60px;
+	opacity: 0.34;
+	animation: umcTwinkle 10s linear infinite;
+}
+
+.umc-background::after {
+	background: linear-gradient(90deg, rgba(4, 5, 7, 0.08), rgba(4, 5, 7, 0.5));
+}
+
+.umc-city-preview {
+	width: 100%;
+	height: 100%;
+	overflow: hidden;
+}
+
+.umc-city-preview svg {
+	width: 100%;
+	height: 100%;
+	display: block;
+}
+
+.umc-orbit-slow {
+	animation: umcOrbitSlow 26s linear infinite;
+}
+
+.umc-orbit-fast {
+	animation: umcOrbitFast 16s linear infinite;
+}
+
+@keyframes umcTwinkle {
+	0%,
+	100% {
+		opacity: 0.22;
+	}
+
+	40% {
+		opacity: 0.42;
+	}
+
+	65% {
+		opacity: 0.3;
+	}
+}
+
+@keyframes umcOrbitSlow {
+	from {
+		transform: rotate(0deg);
+	}
+
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+@keyframes umcOrbitFast {
+	from {
+		transform: rotate(360deg);
+	}
+
+	to {
+		transform: rotate(0deg);
+	}
+}
