@@ -21,11 +21,14 @@ export interface TemplateConfig {
   sizePreset: string
 }
 
+export type UMCPosterTypographyStyle = 'urban' | 'nordic' | 'classic'
+
 export interface StyleConfig {
   paletteId: string
   tone: 'classic' | 'minimal' | 'night' | 'editorial'
   lineWeight: 'fine' | 'balanced' | 'bold'
   textureEnabled: boolean
+  typographyStyle: UMCPosterTypographyStyle
 }
 
 export interface ObjectsConfig {

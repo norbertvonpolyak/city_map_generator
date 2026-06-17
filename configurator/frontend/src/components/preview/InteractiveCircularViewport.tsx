@@ -1,38 +1,57 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
 import type {
   UMCModuleKind,
   UMCPreviewObject,
   UMCPreviewObjectType,
   UMCPreviewPoint,
+  UMCPosterTypographyStyle,
   UMCPreviewViewportState,
 } from '@umc-shared/types'
+import { huUiText } from '../../content/hu'
+import { CityLiveMapPreview } from './CityLiveMapPreview'
 import { ModuleMockMapLayer } from './ModuleMockMapLayer'
 
 interface InteractiveCircularViewportProps {
   moduleKind: UMCModuleKind
   title: string
   subtitle: string
+  posterSubtitle: string
+  posterDate: string
+  posterCustomText: string
+  titleTextAppearance: TextAppearanceSettings
+  subtitleTextAppearance: TextAppearanceSettings
+  dateTextAppearance: TextAppearanceSettings
+  customTextAppearance: TextAppearanceSettings
+  typographyStyle: UMCPosterTypographyStyle
+  styleSummary: string
   viewport: UMCPreviewViewportState
   placementType: UMCPreviewObjectType
   selectedObjectId: string | null
   objects: UMCPreviewObject[]
   cityPreviewSvg: string | null
   cityPreviewStatus: 'idle' | 'loading' | 'ready' | 'city-not-found' | 'failed'
+  locationLatitude: number | null
+  locationLongitude: number | null
+  radiusKm: number
+  onLocationCenterChange: (latitude: number, longitude: number) => void
+  frameOption: 'none' | 'wood-brown' | 'black' | 'white'
   onViewportChange: (viewport: UMCPreviewViewportState) => void
   onViewportReset: () => void
   onAddObject: (type: UMCPreviewObjectType, point: UMCPreviewPoint) => void
   onMoveObject: (id: string, point: UMCPreviewPoint) => void
   onSelectObject: (id: string | null) => void
   onDeleteSelected: () => void
+  onTextFieldFocus: (field: 'title' | 'subtitle' | 'date' | 'custom') => void
 }
 
-interface PointerInteraction {
-  mode: 'pan' | 'drag'
-  pointerId: number
-  startScreen: UMCPreviewPoint
-  startPan: UMCPreviewPoint
-  objectId?: string
-  startObjectPosition?: UMCPreviewPoint
+interface TextAppearanceSettings {
+  scale: number
+  positionY: number
+  variant: 'normal' | 'italic'
+  weight: '500' | '700' | '900'
+  fontFamily: 'manrope' | 'montserrat' | 'poppins' | 'lora'
+  tone: 'black' | 'gray' | 'brown'
 }
 
 const objectIcon: Record<UMCPreviewObjectType, string> = {
@@ -43,131 +62,99 @@ const objectIcon: Record<UMCPreviewObjectType, string> = {
   text: 'T',
 }
 
-const clampZoom = (value: number): number => {
-  return Math.min(3.2, Math.max(0.6, value))
+interface DragState {
+  pointerId: number
+  objectId: string
+  startScreen: UMCPreviewPoint
+  startObject: UMCPreviewPoint
 }
 
-const pointFromEvent = (event: React.PointerEvent | React.MouseEvent): UMCPreviewPoint => {
-  return { x: event.clientX, y: event.clientY }
+const toCanvasPoint = (container: HTMLDivElement, screen: UMCPreviewPoint): UMCPreviewPoint => {
+  const rect = container.getBoundingClientRect()
+  const localX = Math.min(Math.max(screen.x - rect.left, 0), rect.width)
+  const localY = Math.min(Math.max(screen.y - rect.top, 0), rect.height)
+
+  return {
+    x: ((localX / rect.width) * 380) - 190,
+    y: ((localY / rect.height) * 380) - 190,
+  }
+}
+
+const toneByOption: Record<'black' | 'gray' | 'brown', string> = {
+  black: '#20201f',
+  gray: '#57534d',
+  brown: '#70573b',
+}
+
+const fontByOption: Record<'manrope' | 'montserrat' | 'poppins' | 'lora', string> = {
+  manrope: "'Manrope', 'Segoe UI', sans-serif",
+  montserrat: "'Montserrat', 'Manrope', 'Segoe UI', sans-serif",
+  poppins: "'Poppins', 'Manrope', 'Segoe UI', sans-serif",
+  lora: "'Lora', Georgia, serif",
 }
 
 export const InteractiveCircularViewport = ({
   moduleKind,
   title,
   subtitle,
-  viewport,
+  posterSubtitle,
+  posterDate,
+  posterCustomText,
+  titleTextAppearance,
+  subtitleTextAppearance,
+  dateTextAppearance,
+  customTextAppearance,
+  typographyStyle,
+  styleSummary,
+  viewport: _viewport,
   placementType,
   selectedObjectId,
   objects,
   cityPreviewSvg,
   cityPreviewStatus,
-  onViewportChange,
-  onViewportReset,
+  locationLatitude,
+  locationLongitude,
+  radiusKm,
+  onLocationCenterChange,
+  frameOption,
+  onViewportChange: _onViewportChange,
+  onViewportReset: _onViewportReset,
   onAddObject,
   onMoveObject,
   onSelectObject,
   onDeleteSelected,
+  onTextFieldFocus,
 }: InteractiveCircularViewportProps) => {
-  const containerRef = useRef<HTMLDivElement | null>(null)
-  const [spacePanning, setSpacePanning] = useState(false)
-  const [interaction, setInteraction] = useState<PointerInteraction | null>(null)
+  const canvasRef = useRef<HTMLDivElement | null>(null)
+  const [dragState, setDragState] = useState<DragState | null>(null)
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.code === 'Space') {
-        setSpacePanning(true)
-      }
-      if (event.key === 'Delete' || event.key === 'Backspace') {
-        onDeleteSelected()
-      }
+  const markerObjects = useMemo(() => {
+    return objects.filter((item) => item.type !== 'text')
+  }, [objects])
+
+  const textObjects = useMemo(() => {
+    return objects.filter((item) => item.type === 'text')
+  }, [objects])
+
+  const frameClass = useMemo(() => {
+    if (frameOption === 'none') {
+      return 'umc-frame umc-frame-none'
     }
-
-    const onKeyUp = (event: KeyboardEvent) => {
-      if (event.code === 'Space') {
-        setSpacePanning(false)
-      }
+    if (frameOption === 'wood-brown') {
+      return 'umc-frame umc-frame-wood'
     }
-
-    window.addEventListener('keydown', onKeyDown)
-    window.addEventListener('keyup', onKeyUp)
-
-    return () => {
-      window.removeEventListener('keydown', onKeyDown)
-      window.removeEventListener('keyup', onKeyUp)
+    if (frameOption === 'white') {
+      return 'umc-frame umc-frame-white'
     }
-  }, [onDeleteSelected])
+    return 'umc-frame umc-frame-black'
+  }, [frameOption])
 
-  const viewportSummary = useMemo(() => {
-    return `${Math.round(viewport.zoom * 100)}%`
-  }, [viewport.zoom])
+  const urbanCustomLabel = useMemo(() => {
+    const value = posterCustomText.trim()
+    return value.length > 0 ? value : null
+  }, [posterCustomText])
 
-  const toWorldPoint = (screen: UMCPreviewPoint): UMCPreviewPoint | null => {
-    const container = containerRef.current
-    if (!container) {
-      return null
-    }
-
-    const rect = container.getBoundingClientRect()
-    const localX = screen.x - rect.left
-    const localY = screen.y - rect.top
-    const centerX = rect.width / 2
-    const centerY = rect.height / 2
-
-    return {
-      x: (localX - centerX - viewport.pan.x) / viewport.zoom,
-      y: (localY - centerY - viewport.pan.y) / viewport.zoom,
-    }
-  }
-
-  const onWheel = (event: React.WheelEvent<HTMLDivElement>) => {
-    event.preventDefault()
-
-    const container = containerRef.current
-    if (!container) {
-      return
-    }
-
-    const rect = container.getBoundingClientRect()
-    const cursorX = event.clientX - rect.left
-    const cursorY = event.clientY - rect.top
-    const centerX = rect.width / 2
-    const centerY = rect.height / 2
-
-    const zoomFactor = event.deltaY < 0 ? 1.08 : 0.92
-    const nextZoom = clampZoom(viewport.zoom * zoomFactor)
-
-    const worldX = (cursorX - centerX - viewport.pan.x) / viewport.zoom
-    const worldY = (cursorY - centerY - viewport.pan.y) / viewport.zoom
-
-    const nextPan = {
-      x: cursorX - centerX - worldX * nextZoom,
-      y: cursorY - centerY - worldY * nextZoom,
-    }
-
-    onViewportChange({ zoom: nextZoom, pan: nextPan })
-  }
-
-  const startPan = (event: React.PointerEvent<HTMLDivElement>) => {
-    const container = containerRef.current
-    if (!container) {
-      return
-    }
-
-    container.setPointerCapture(event.pointerId)
-    setInteraction({
-      mode: 'pan',
-      pointerId: event.pointerId,
-      startScreen: pointFromEvent(event),
-      startPan: viewport.pan,
-    })
-  }
-
-  const onContainerPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (event.button === 2 || spacePanning) {
-      startPan(event)
-      return
-    }
-
+  const onCanvasPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) {
       return
     }
@@ -176,20 +163,29 @@ export const InteractiveCircularViewport = ({
       return
     }
 
-    const point = toWorldPoint(pointFromEvent(event))
-    if (!point) {
+    if (placementType === 'text') {
       return
     }
 
+    if (moduleKind === 'star-map') {
+      return
+    }
+
+    const container = canvasRef.current
+    if (!container) {
+      return
+    }
+
+    const point = toCanvasPoint(container, { x: event.clientX, y: event.clientY })
     onAddObject(placementType, point)
   }
 
-  const onObjectPointerDown = (event: React.PointerEvent<HTMLButtonElement>, object: UMCPreviewObject) => {
-    if (event.button !== 0) {
+  const onMarkerPointerDown = (event: React.PointerEvent<HTMLButtonElement>, object: UMCPreviewObject) => {
+    if (event.button !== 0 || object.type === 'text') {
       return
     }
 
-    const container = containerRef.current
+    const container = canvasRef.current
     if (!container) {
       return
     }
@@ -198,178 +194,243 @@ export const InteractiveCircularViewport = ({
     onSelectObject(object.id)
     container.setPointerCapture(event.pointerId)
 
-    setInteraction({
-      mode: 'drag',
+    setDragState({
       pointerId: event.pointerId,
-      startScreen: pointFromEvent(event),
-      startPan: viewport.pan,
       objectId: object.id,
-      startObjectPosition: object.position,
+      startScreen: { x: event.clientX, y: event.clientY },
+      startObject: object.position,
     })
   }
 
   const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (!interaction || interaction.pointerId !== event.pointerId) {
+    if (!dragState || dragState.pointerId !== event.pointerId) {
       return
     }
 
-    const deltaX = event.clientX - interaction.startScreen.x
-    const deltaY = event.clientY - interaction.startScreen.y
-
-    if (interaction.mode === 'pan') {
-      onViewportChange({
-        zoom: viewport.zoom,
-        pan: {
-          x: interaction.startPan.x + deltaX,
-          y: interaction.startPan.y + deltaY,
-        },
-      })
+    const container = canvasRef.current
+    if (!container) {
       return
     }
 
-    if (interaction.mode === 'drag' && interaction.objectId && interaction.startObjectPosition) {
-      onMoveObject(interaction.objectId, {
-        x: interaction.startObjectPosition.x + deltaX / viewport.zoom,
-        y: interaction.startObjectPosition.y + deltaY / viewport.zoom,
-      })
-    }
+    const rect = container.getBoundingClientRect()
+    const unitX = 380 / rect.width
+    const unitY = 380 / rect.height
+
+    onMoveObject(dragState.objectId, {
+      x: dragState.startObject.x + (event.clientX - dragState.startScreen.x) * unitX,
+      y: dragState.startObject.y + (event.clientY - dragState.startScreen.y) * unitY,
+    })
   }
 
-  const clearInteraction = (event: React.PointerEvent<HTMLDivElement>) => {
-    const container = containerRef.current
-    if (container && interaction && interaction.pointerId === event.pointerId) {
+  const onPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    const container = canvasRef.current
+    if (container && dragState && dragState.pointerId === event.pointerId) {
       container.releasePointerCapture(event.pointerId)
     }
-    setInteraction(null)
+    setDragState(null)
   }
 
+  const posterTypeStyle = useMemo(() => {
+    const source = titleTextAppearance
+    return {
+      '--umc-type-scale': String(source.scale),
+      '--umc-type-style': source.variant,
+      '--umc-type-weight': source.weight,
+      '--umc-type-font': fontByOption[source.fontFamily],
+      '--umc-type-color': toneByOption[source.tone],
+      '--umc-type-offset-y': `${source.positionY}px`,
+    } as CSSProperties
+  }, [titleTextAppearance])
+
+  const subtitleTypeStyle = useMemo(() => {
+    return {
+      '--umc-type-scale': String(subtitleTextAppearance.scale),
+      '--umc-type-style': subtitleTextAppearance.variant,
+      '--umc-type-weight': subtitleTextAppearance.weight,
+      '--umc-type-font': fontByOption[subtitleTextAppearance.fontFamily],
+      '--umc-type-color': toneByOption[subtitleTextAppearance.tone],
+      '--umc-type-offset-y': `${subtitleTextAppearance.positionY}px`,
+    } as CSSProperties
+  }, [subtitleTextAppearance])
+
+  const dateTypeStyle = useMemo(() => {
+    return {
+      '--umc-type-scale': String(dateTextAppearance.scale),
+      '--umc-type-style': dateTextAppearance.variant,
+      '--umc-type-weight': dateTextAppearance.weight,
+      '--umc-type-font': fontByOption[dateTextAppearance.fontFamily],
+      '--umc-type-color': toneByOption[dateTextAppearance.tone],
+      '--umc-type-offset-y': `${dateTextAppearance.positionY}px`,
+    } as CSSProperties
+  }, [dateTextAppearance])
+
+  const customTypeStyle = useMemo(() => {
+    return {
+      '--umc-type-scale': String(customTextAppearance.scale),
+      '--umc-type-style': customTextAppearance.variant,
+      '--umc-type-weight': customTextAppearance.weight,
+      '--umc-type-font': fontByOption[customTextAppearance.fontFamily],
+      '--umc-type-color': toneByOption[customTextAppearance.tone],
+      '--umc-type-offset-y': `${customTextAppearance.positionY}px`,
+    } as CSSProperties
+  }, [customTextAppearance])
+
   return (
-    <div className="relative flex h-full flex-col rounded-3xl border border-[var(--umc-border)] bg-[linear-gradient(160deg,rgba(7,9,13,0.9),rgba(5,7,10,0.62))] p-4">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-xs uppercase tracking-[0.22em] text-[var(--umc-gold)]">Interactive Preview</p>
-          <h3 className="umc-serif text-2xl text-[var(--umc-ivory)] md:text-3xl">{title}</h3>
-          <p className="mt-1 text-sm text-[var(--umc-ivory-soft)]">{subtitle}</p>
+    <div className="flex h-full flex-col gap-4">
+      <div className="umc-preview-toolbar">
+        <div className="umc-preview-toolbar-main">
+          <p className="umc-preview-kicker">{huUiText.summaryCardKicker}</p>
+          <div className="umc-preview-location-row">
+            <div className="umc-location-icon-box" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path
+                  d="M12 21c3.2-4.2 6.4-7.3 6.4-11.1A6.4 6.4 0 0 0 12 3.5a6.4 6.4 0 0 0-6.4 6.4C5.6 13.7 8.8 16.8 12 21Z"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <circle cx="12" cy="9.9" r="2.4" stroke="currentColor" strokeWidth="1.8" />
+              </svg>
+            </div>
+            <div>
+              <p className="umc-toolbar-value umc-toolbar-value-hero">{subtitle || huUiText.locationNotSelected}</p>
+              <p className="umc-toolbar-subline">{styleSummary || huUiText.previewToolbarStyleValue(moduleKind)}</p>
+            </div>
+          </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => onViewportChange({ zoom: clampZoom(viewport.zoom * 1.12), pan: viewport.pan })}
-            className="rounded-lg border border-[var(--umc-border)] bg-[rgba(7,9,13,0.8)] px-3 py-1.5 text-sm text-[var(--umc-ivory)] transition hover:border-[var(--umc-gold-soft)]"
-          >
-            +
-          </button>
-          <button
-            type="button"
-            onClick={() => onViewportChange({ zoom: clampZoom(viewport.zoom * 0.88), pan: viewport.pan })}
-            className="rounded-lg border border-[var(--umc-border)] bg-[rgba(7,9,13,0.8)] px-3 py-1.5 text-sm text-[var(--umc-ivory)] transition hover:border-[var(--umc-gold-soft)]"
-          >
-            -
-          </button>
-          <button
-            type="button"
-            onClick={onViewportReset}
-            className="rounded-lg border border-[var(--umc-border)] bg-[rgba(7,9,13,0.8)] px-3 py-1.5 text-sm text-[var(--umc-ivory)] transition hover:border-[var(--umc-gold-soft)]"
-          >
-            Reset
-          </button>
-          <span className="rounded-lg border border-[var(--umc-border)] px-3 py-1.5 text-xs uppercase tracking-[0.16em] text-[var(--umc-ivory-soft)]">
-            {viewportSummary}
-          </span>
+        <button type="button" className="umc-share-button">
+          {huUiText.share}
+        </button>
+      </div>
+
+      <div className="umc-stage-wrap">
+        <div className={frameClass}>
+          <article className="umc-poster-sheet">
+            <div
+              ref={canvasRef}
+              className="umc-poster-art"
+              onPointerDown={onCanvasPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={onPointerUp}
+              onPointerCancel={onPointerUp}
+              onClick={() => onSelectObject(null)}
+            >
+              {moduleKind === 'city-map' ? (
+                <CityLiveMapPreview
+                  latitude={locationLatitude}
+                  longitude={locationLongitude}
+                  radiusKm={radiusKm}
+                  onCenterChange={onLocationCenterChange}
+                  onPlacementClick={(point) => {
+                    if (placementType === 'text') {
+                      return
+                    }
+                    onAddObject(placementType, point)
+                  }}
+                />
+              ) : (
+                <ModuleMockMapLayer moduleKind={moduleKind} />
+              )}
+
+              {moduleKind === 'city-map' && cityPreviewSvg ? (
+                <div
+                  className="umc-city-preview absolute inset-0 pointer-events-none"
+                  aria-hidden="true"
+                  dangerouslySetInnerHTML={{ __html: cityPreviewSvg }}
+                />
+              ) : null}
+
+              {moduleKind === 'city-map' && cityPreviewStatus === 'loading' ? (
+                <div className="umc-preview-loading-overlay" role="status" aria-live="polite">
+                  <span className="umc-preview-loading-spinner" aria-hidden="true" />
+                  <div className="umc-preview-loading-copy">
+                    <strong>{huUiText.renderInProgressTitle}</strong>
+                    <span>{huUiText.renderInProgressHint}</span>
+                  </div>
+                </div>
+              ) : null}
+
+              {moduleKind === 'city-map' && cityPreviewStatus !== 'idle' && cityPreviewStatus !== 'loading' && !cityPreviewSvg ? (
+                <div className="umc-preview-status-badge">
+                  {cityPreviewStatus === 'city-not-found'
+                    ? huUiText.previewStatusCityNotFound
+                    : huUiText.previewStatusFailed}
+                </div>
+              ) : null}
+
+              {markerObjects.map((object) => {
+                const selected = object.id === selectedObjectId
+                return (
+                  <button
+                    key={object.id}
+                    type="button"
+                    className={selected ? 'umc-object-chip umc-object-chip-active' : 'umc-object-chip'}
+                    style={{
+                      left: `calc(50% + ${object.position.x}px)`,
+                      top: `calc(50% + ${object.position.y}px)`,
+                    }}
+                    onPointerDown={(event) => onMarkerPointerDown(event, object)}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      onSelectObject(object.id)
+                    }}
+                  >
+                    <span>{objectIcon[object.type]}</span>
+                  </button>
+                )
+              })}
+            </div>
+
+            {typographyStyle === 'urban' ? (
+              <div className="umc-poster-typo umc-poster-typo-urban" style={posterTypeStyle}>
+                <div className="umc-poster-urban-accent" aria-hidden="true" />
+                <div className="umc-poster-urban-copy">
+                  <h2 className="umc-poster-title umc-preview-text-clickable" onClick={() => onTextFieldFocus('title')}>{title || huUiText.defaultPosterTitle}</h2>
+                  <p className="umc-poster-subtitle umc-preview-text-clickable" style={subtitleTypeStyle} onClick={() => onTextFieldFocus('subtitle')}>{posterSubtitle || subtitle || huUiText.defaultPosterSubtitle}</p>
+                  {urbanCustomLabel ? (
+                    <p className="umc-poster-urban-coordinates umc-preview-text-clickable" style={customTypeStyle} onClick={() => onTextFieldFocus('custom')}>{urbanCustomLabel}</p>
+                  ) : null}
+                  {posterDate ? <p className="umc-poster-meta umc-preview-text-clickable" style={dateTypeStyle} onClick={() => onTextFieldFocus('date')}>{posterDate}</p> : null}
+                  {textObjects.map((item) => (
+                    <p key={item.id} className="umc-poster-meta umc-preview-text-clickable" style={customTypeStyle} onClick={() => onTextFieldFocus('custom')}>{item.label}</p>
+                  ))}
+                </div>
+              </div>
+            ) : typographyStyle === 'nordic' ? (
+              <div className="umc-poster-typo umc-poster-typo-nordic" style={posterTypeStyle}>
+                <h2 className="umc-poster-title umc-preview-text-clickable" onClick={() => onTextFieldFocus('title')}>{title || huUiText.defaultPosterTitle}</h2>
+                <div className="umc-poster-nordic-subline">
+                  <span className="umc-poster-nordic-line" aria-hidden="true" />
+                  <p className="umc-poster-subtitle umc-preview-text-clickable" style={subtitleTypeStyle} onClick={() => onTextFieldFocus('subtitle')}>{posterSubtitle || subtitle || huUiText.defaultPosterSubtitle}</p>
+                  <span className="umc-poster-nordic-line" aria-hidden="true" />
+                </div>
+                <p className="umc-poster-nordic-dot" aria-hidden="true">•</p>
+                {posterDate ? <p className="umc-poster-meta umc-preview-text-clickable" style={dateTypeStyle} onClick={() => onTextFieldFocus('date')}>{posterDate}</p> : null}
+                {posterCustomText ? <p className="umc-poster-meta umc-preview-text-clickable" style={customTypeStyle} onClick={() => onTextFieldFocus('custom')}>{posterCustomText}</p> : null}
+                {textObjects.map((item) => (
+                  <p key={item.id} className="umc-poster-meta umc-preview-text-clickable" style={customTypeStyle} onClick={() => onTextFieldFocus('custom')}>{item.label}</p>
+                ))}
+              </div>
+            ) : (
+              <div className={`umc-poster-typo umc-poster-typo-${typographyStyle}`} style={posterTypeStyle}>
+                <h2 className="umc-poster-title umc-preview-text-clickable" onClick={() => onTextFieldFocus('title')}>{title || huUiText.defaultPosterTitle}</h2>
+                <p className="umc-poster-subtitle umc-preview-text-clickable" style={subtitleTypeStyle} onClick={() => onTextFieldFocus('subtitle')}>{posterSubtitle || subtitle || huUiText.defaultPosterSubtitle}</p>
+                <div className="umc-typo-divider" />
+                {posterDate ? <p className="umc-poster-meta umc-preview-text-clickable" style={dateTypeStyle} onClick={() => onTextFieldFocus('date')}>{posterDate}</p> : null}
+                {posterCustomText ? <p className="umc-poster-meta umc-preview-text-clickable" style={customTypeStyle} onClick={() => onTextFieldFocus('custom')}>{posterCustomText}</p> : null}
+                {textObjects.map((item) => (
+                  <p key={item.id} className="umc-poster-meta umc-preview-text-clickable" style={customTypeStyle} onClick={() => onTextFieldFocus('custom')}>{item.label}</p>
+                ))}
+              </div>
+            )}
+          </article>
         </div>
       </div>
 
-      <div className="relative flex flex-1 items-center justify-center overflow-hidden rounded-2xl border border-[var(--umc-border)] bg-[radial-gradient(circle_at_20%_20%,rgba(201,171,120,0.2),transparent_42%),radial-gradient(circle_at_72%_12%,rgba(126,235,226,0.16),transparent_38%),linear-gradient(150deg,#070a11,#040507)]">
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(233,226,212,0.08),transparent_62%)]" />
-        <div className="pointer-events-none absolute h-[76vmin] w-[76vmin] max-h-[780px] max-w-[780px] rounded-full border border-[rgba(201,171,120,0.28)]" />
-
-        <div
-          ref={containerRef}
-          className="relative aspect-square w-[min(76vmin,760px)] overflow-hidden rounded-full border border-[rgba(233,226,212,0.5)] bg-[radial-gradient(circle_at_35%_22%,rgba(126,235,226,0.14),transparent_44%),radial-gradient(circle_at_68%_80%,rgba(201,171,120,0.2),transparent_45%),rgba(4,6,10,0.95)] shadow-[0_28px_80px_rgba(0,0,0,0.55)]"
-          onPointerDown={onContainerPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={clearInteraction}
-          onPointerCancel={clearInteraction}
-          onWheel={onWheel}
-          onContextMenu={(event) => event.preventDefault()}
-        >
-          <div
-            className="absolute inset-0"
-            style={{
-              transform: `translate(${viewport.pan.x}px, ${viewport.pan.y}px) scale(${viewport.zoom})`,
-              transformOrigin: '50% 50%',
-            }}
-          >
-            {moduleKind === 'city-map' ? (
-              <>
-                {cityPreviewSvg ? (
-                  <div
-                    className="umc-city-preview absolute inset-0 pointer-events-none"
-                    aria-hidden="true"
-                    dangerouslySetInnerHTML={{ __html: cityPreviewSvg }}
-                  />
-                ) : (
-                  <div className="absolute inset-0 flex items-center justify-center px-6 text-center pointer-events-none">
-                    {cityPreviewStatus === 'loading' ? (
-                      <div className="rounded-2xl border border-[var(--umc-border)] bg-[rgba(7,9,13,0.82)] px-5 py-4 text-sm text-[var(--umc-ivory-soft)] shadow-[0_20px_50px_rgba(0,0,0,0.35)]">
-                        Loading Preview...
-                      </div>
-                    ) : cityPreviewStatus === 'city-not-found' ? (
-                      <div className="rounded-2xl border border-[rgba(220,90,90,0.45)] bg-[rgba(110,28,28,0.4)] px-5 py-4 text-sm text-[rgb(242,183,183)] shadow-[0_20px_50px_rgba(0,0,0,0.35)]">
-                        City Not Found
-                      </div>
-                    ) : cityPreviewStatus === 'failed' ? (
-                      <div className="rounded-2xl border border-[rgba(220,90,90,0.45)] bg-[rgba(110,28,28,0.4)] px-5 py-4 text-sm text-[rgb(242,183,183)] shadow-[0_20px_50px_rgba(0,0,0,0.35)]">
-                        Preview Generation Failed
-                      </div>
-                    ) : (
-                      <div className="max-w-[18rem] rounded-2xl border border-[var(--umc-border)] bg-[rgba(7,9,13,0.82)] px-5 py-4 text-sm text-[var(--umc-ivory-soft)] shadow-[0_20px_50px_rgba(0,0,0,0.35)]">
-                        Generate Preview to render the real city SVG here.
-                      </div>
-                    )}
-                  </div>
-                )}
-              </>
-            ) : (
-              <ModuleMockMapLayer moduleKind={moduleKind} />
-            )}
-            <div className="absolute inset-[10%] rounded-full border border-dashed border-[rgba(233,226,212,0.2)]" />
-            <div className="absolute inset-[23%] rounded-full border border-[rgba(201,171,120,0.18)]" />
-
-            {objects.map((object) => {
-              const selected = object.id === selectedObjectId
-
-              return (
-                <button
-                  key={object.id}
-                  type="button"
-                  onPointerDown={(event) => onObjectPointerDown(event, object)}
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    onSelectObject(object.id)
-                  }}
-                  className={[
-                    'absolute -translate-x-1/2 -translate-y-1/2 rounded-full border px-3 py-1 text-sm shadow-[0_10px_22px_rgba(0,0,0,0.4)] transition',
-                    selected
-                      ? 'border-[var(--umc-gold)] bg-[rgba(201,171,120,0.24)] text-[var(--umc-ivory)]'
-                      : 'border-[var(--umc-border)] bg-[rgba(7,9,13,0.76)] text-[var(--umc-ivory-soft)] hover:border-[var(--umc-gold-soft)] hover:text-[var(--umc-ivory)]',
-                  ].join(' ')}
-                  style={{
-                    left: `calc(50% + ${object.position.x}px)`,
-                    top: `calc(50% + ${object.position.y}px)`,
-                  }}
-                >
-                  <span className="mr-1">{objectIcon[object.type]}</span>
-                  <span>{object.label}</span>
-                </button>
-              )
-            })}
-          </div>
-
-          <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full border border-[var(--umc-border)] bg-[rgba(6,8,12,0.82)] px-4 py-1.5 text-xs uppercase tracking-[0.16em] text-[var(--umc-ivory-soft)]">
-            Right-click or hold Space to pan • Wheel to zoom
-          </div>
-        </div>
+      <div className="umc-preview-hints">
+        <span>{huUiText.previewHelpPlacement}</span>
+        <button type="button" onClick={onDeleteSelected}>{huUiText.delete}</button>
       </div>
     </div>
   )

@@ -1,4 +1,10 @@
 import type { UMCPosterConfig } from '@umc-shared/types'
+import {
+  huOrientationLabels,
+  huTemplateLabels,
+  huUiText,
+  toHuLabel,
+} from '../../content/hu'
 import { SectionCard } from './SectionCard'
 
 interface TemplateSectionProps {
@@ -7,19 +13,19 @@ interface TemplateSectionProps {
 }
 
 const templateOptions = [
-  { id: 'city-signature', label: 'City Signature' },
-  { id: 'building-elevation', label: 'Building Elevation' },
-  { id: 'stellar-classic', label: 'Stellar Classic' },
+  { id: 'city-signature', label: huTemplateLabels['city-signature'] },
+  { id: 'building-elevation', label: huTemplateLabels['building-elevation'] },
+  { id: 'stellar-classic', label: huTemplateLabels['stellar-classic'] },
 ]
 
 export const TemplateSection = ({ config, onTemplateChange }: TemplateSectionProps) => {
   return (
     <SectionCard
-      title="Template Section"
-      description="Select compositional presets without rendering behavior."
+      title={huUiText.templateSectionTitle}
+      description={huUiText.templateSectionDescription}
     >
       <label className="flex flex-col gap-1 text-sm text-[var(--umc-ivory-soft)]">
-        Template
+        {huUiText.template}
         <select
           value={config.template.templateId}
           onChange={(event) => onTemplateChange(event.target.value)}
@@ -33,9 +39,9 @@ export const TemplateSection = ({ config, onTemplateChange }: TemplateSectionPro
         </select>
       </label>
       <div className="grid grid-cols-2 gap-2 text-xs uppercase tracking-[0.18em] text-[var(--umc-ivory-soft)]">
-        <div className="rounded-lg border border-[var(--umc-border)] px-3 py-2">Ratio: {config.template.ratio}</div>
+        <div className="rounded-lg border border-[var(--umc-border)] px-3 py-2">{huUiText.ratio}: {config.template.ratio}</div>
         <div className="rounded-lg border border-[var(--umc-border)] px-3 py-2">
-          Orientation: {config.template.orientation}
+          {huUiText.orientation}: {toHuLabel(config.template.orientation, huOrientationLabels)}
         </div>
       </div>
     </SectionCard>

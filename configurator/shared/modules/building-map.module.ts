@@ -4,10 +4,10 @@ import type { UMCModuleDefinition } from './types'
 export const buildingMapDefaults: BuildingPosterConfig = {
   schemaVersion: '1.0.0',
   moduleKind: 'building-map',
-  title: 'Building Map Poster',
+  title: 'Épülettérkép poszter',
   createdAtIso: '2026-01-01T00:00:00.000Z',
   location: {
-    query: 'BMW Welt, Munich',
+    query: 'BMW Welt, Munchen',
     latitude: 48.1767,
     longitude: 11.5562,
     regionHint: 'district-scale',
@@ -19,10 +19,11 @@ export const buildingMapDefaults: BuildingPosterConfig = {
     sizePreset: '40x50',
   },
   style: {
-    paletteId: 'graphite-ivory',
+    paletteId: 'stone',
     tone: 'editorial',
     lineWeight: 'fine',
     textureEnabled: false,
+    typographyStyle: 'classic',
   },
   objects: {
     roads: true,
@@ -41,9 +42,9 @@ export const buildingMapDefaults: BuildingPosterConfig = {
 
 export const buildingMapModuleDefinition: UMCModuleDefinition<BuildingPosterConfig> = {
   kind: 'building-map',
-  label: 'Building Map',
-  tagline: 'Architectural focus with technical composition controls.',
-  previewHint: 'Preview placeholder for building-map output.',
+  label: 'Épülettérkép',
+  tagline: 'Építészeti fókusz precíz kompozíciós beállításokkal.',
+  previewHint: 'Helyőrző előnézet az épülettérkép kimenetéhez.',
   availableSections: ['module-selector', 'location', 'template', 'style', 'objects'],
   defaults: buildingMapDefaults,
   status: 'foundation',

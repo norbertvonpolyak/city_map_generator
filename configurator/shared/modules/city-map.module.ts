@@ -4,10 +4,10 @@ import type { UMCModuleDefinition } from './types'
 export const cityMapDefaults: CityPosterConfig = {
   schemaVersion: '1.0.0',
   moduleKind: 'city-map',
-  title: 'City Map Poster',
+  title: 'Várostérkép poszter',
   createdAtIso: '2026-01-01T00:00:00.000Z',
   location: {
-    query: 'Budapest, Hungary',
+    query: 'Budapest, Magyarország',
     latitude: 47.4979,
     longitude: 19.0402,
     regionHint: 'city-center',
@@ -19,10 +19,11 @@ export const cityMapDefaults: CityPosterConfig = {
     sizePreset: '50x70',
   },
   style: {
-    paletteId: 'heritage-sand',
+    paletteId: 'linen',
     tone: 'classic',
     lineWeight: 'balanced',
     textureEnabled: true,
+    typographyStyle: 'classic',
   },
   objects: {
     roads: true,
@@ -41,9 +42,9 @@ export const cityMapDefaults: CityPosterConfig = {
 
 export const cityMapModuleDefinition: UMCModuleDefinition<CityPosterConfig> = {
   kind: 'city-map',
-  label: 'City Map',
-  tagline: 'Urban identity posters with curated cartographic style.',
-  previewHint: 'Generate a real city SVG preview from the backend.',
+  label: 'Várostérkép',
+  tagline: 'Városi identitás poszterek gondosan válogatott kartográfiai stílusban.',
+  previewHint: 'A valós várostérkép előnézetet a Generálás gomb készíti el a háttérrendszerből.',
   availableSections: ['module-selector', 'location', 'template', 'style', 'objects'],
   defaults: cityMapDefaults,
   status: 'foundation',

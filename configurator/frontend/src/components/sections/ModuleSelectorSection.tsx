@@ -1,5 +1,6 @@
 import { umcModuleList } from '@umc-shared/modules'
 import type { UMCModuleKind } from '@umc-shared/types'
+import { huModuleStatusLabels, huUiText, toHuLabel } from '../../content/hu'
 import { SectionCard } from './SectionCard'
 
 interface ModuleSelectorSectionProps {
@@ -13,8 +14,8 @@ export const ModuleSelectorSection = ({
 }: ModuleSelectorSectionProps) => {
   return (
     <SectionCard
-      title="Module Selector"
-      description="Switch between City, Building, and Star map foundations."
+      title={huUiText.moduleSelectorTitle}
+      description={huUiText.moduleSelectorDescription}
     >
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
         {umcModuleList.map((moduleDefinition) => {
@@ -32,7 +33,7 @@ export const ModuleSelectorSection = ({
               ].join(' ')}
             >
               <div className="umc-serif text-base">{moduleDefinition.label}</div>
-              <div className="mt-1 text-xs">{moduleDefinition.status}</div>
+              <div className="mt-1 text-xs">{toHuLabel(moduleDefinition.status, huModuleStatusLabels)}</div>
             </button>
           )
         })}

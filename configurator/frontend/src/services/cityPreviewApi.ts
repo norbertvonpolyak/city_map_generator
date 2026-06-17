@@ -1,6 +1,8 @@
 export interface CityPreviewRequest {
   city: string
   style: 'minimal'
+  latitude?: number | null
+  longitude?: number | null
 }
 
 export interface CityPreviewResponse {

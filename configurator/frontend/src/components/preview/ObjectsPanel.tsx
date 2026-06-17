@@ -1,4 +1,5 @@
 import type { UMCPreviewObject, UMCPreviewObjectType } from '@umc-shared/types'
+import { huObjectTypeLabels, huUiText } from '../../content/hu'
 
 interface ObjectsPanelProps {
   objects: UMCPreviewObject[]
@@ -9,13 +10,7 @@ interface ObjectsPanelProps {
   onDeleteObject: (id: string) => void
 }
 
-const typeDisplay: Record<UMCPreviewObjectType, string> = {
-  marker: 'Marker',
-  heart: 'Heart',
-  star: 'Star',
-  pin: 'Pin',
-  text: 'Text',
-}
+const typeDisplay: Record<UMCPreviewObjectType, string> = huObjectTypeLabels
 
 const typeIcon: Record<UMCPreviewObjectType, string> = {
   marker: '●',
@@ -38,12 +33,12 @@ export const ObjectsPanel = ({
   return (
     <aside className="rounded-3xl border border-[var(--umc-border)] bg-[rgba(7,9,13,0.6)] p-4">
       <header className="mb-4">
-        <p className="text-xs uppercase tracking-[0.22em] text-[var(--umc-gold)]">Object System</p>
-        <h3 className="umc-serif mt-1 text-2xl text-[var(--umc-ivory)]">Objects Panel</h3>
+        <p className="text-xs uppercase tracking-[0.22em] text-[var(--umc-gold)]">{huUiText.objectSystem}</p>
+        <h3 className="umc-serif mt-1 text-2xl text-[var(--umc-ivory)]">{huUiText.objectsPanel}</h3>
       </header>
 
       <div className="mb-4">
-        <p className="mb-2 text-xs uppercase tracking-[0.16em] text-[var(--umc-ivory-soft)]">Placement Tool</p>
+        <p className="mb-2 text-xs uppercase tracking-[0.16em] text-[var(--umc-ivory-soft)]">{huUiText.placementTool}</p>
         <div className="grid grid-cols-2 gap-2">
           {placementTypes.map((type) => {
             const selected = type === placementType
@@ -69,11 +64,11 @@ export const ObjectsPanel = ({
       </div>
 
       <div>
-        <p className="mb-2 text-xs uppercase tracking-[0.16em] text-[var(--umc-ivory-soft)]">Current Objects</p>
+        <p className="mb-2 text-xs uppercase tracking-[0.16em] text-[var(--umc-ivory-soft)]">{huUiText.currentObjects}</p>
         <div className="space-y-2">
           {objects.length === 0 && (
             <div className="rounded-lg border border-[var(--umc-border)] bg-[rgba(7,9,13,0.5)] px-3 py-3 text-sm text-[var(--umc-ivory-soft)]">
-              No objects yet. Click in the viewport to place one.
+              {huUiText.noObjectsYet}
             </div>
           )}
 
@@ -103,7 +98,7 @@ export const ObjectsPanel = ({
                   onClick={() => onDeleteObject(object.id)}
                   className="rounded-md border border-[var(--umc-border)] px-2 py-0.5 text-xs text-[var(--umc-ivory-soft)] transition hover:border-[rgba(220,90,90,0.7)] hover:text-[rgb(236,152,152)]"
                 >
-                  Delete
+                  {huUiText.delete}
                 </button>
               </div>
             )

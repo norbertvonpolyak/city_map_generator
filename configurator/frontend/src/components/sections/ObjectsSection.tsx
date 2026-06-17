@@ -1,4 +1,5 @@
 import type { UMCPosterConfig } from '@umc-shared/types'
+import { huObjectLayerLabels, huUiText, toHuLabel } from '../../content/hu'
 import { SectionCard } from './SectionCard'
 
 interface ObjectsSectionProps {
@@ -19,8 +20,8 @@ const objectKeys: Array<keyof UMCPosterConfig['objects']> = [
 export const ObjectsSection = ({ config, onToggle }: ObjectsSectionProps) => {
   return (
     <SectionCard
-      title="Objects Section"
-      description="Toggle semantic layers for future module renderers."
+      title={huUiText.objectsSectionTitle}
+      description={huUiText.objectsSectionDescription}
     >
       <div className="grid grid-cols-2 gap-2 text-sm text-[var(--umc-ivory-soft)]">
         {objectKeys.map((key) => {
@@ -37,7 +38,7 @@ export const ObjectsSection = ({ config, onToggle }: ObjectsSectionProps) => {
                   : 'border-[var(--umc-border)] bg-[rgba(7,9,13,0.55)] hover:border-[var(--umc-gold-soft)]',
               ].join(' ')}
             >
-              {key}
+              {toHuLabel(key, huObjectLayerLabels)}
             </button>
           )
         })}

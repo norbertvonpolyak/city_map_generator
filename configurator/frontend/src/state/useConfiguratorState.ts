@@ -6,7 +6,10 @@ import type { UMCPreviewPoint } from '@umc-shared/types'
 import type { UMCPreviewViewportState } from '@umc-shared/types'
 import type { UMCPosterConfig } from '@umc-shared/types'
 import type { UMCModuleKind } from '@umc-shared/types'
+import type { UMCPosterTypographyStyle } from '@umc-shared/types'
+import { huObjectTypeLabels, huUiText } from '../content/hu'
 import { generateCityPreview as fetchCityPreview } from '../services/cityPreviewApi'
+import type { SelectedLocation } from '../services/locationSearch'
 
 export interface ConfiguratorState {
   activeModule: UMCModuleKind
@@ -21,8 +24,13 @@ export interface ConfiguratorState {
   setActiveModule: (moduleKind: UMCModuleKind) => void
   setTitle: (title: string) => void
   setLocationQuery: (query: string) => void
+  setSelectedLocation: (location: SelectedLocation) => void
+  setLocationCoordinates: (latitude: number, longitude: number) => void
   setTemplateId: (templateId: string) => void
   setPaletteId: (paletteId: string) => void
+  setTypographyStyle: (typographyStyle: UMCPosterTypographyStyle) => void
+  setStarDateIso: (dateIso: string) => void
+  setStarSkyStyle: (skyStyle: 'constellation' | 'minimal') => void
   toggleObject: (key: keyof UMCPosterConfig['objects']) => void
   setPlacementType: (type: UMCPreviewObjectType) => void
   setPreviewViewport: (viewport: UMCPreviewViewportState) => void
@@ -44,13 +52,11 @@ const defaultViewport: UMCPreviewViewportState = {
   pan: { x: 0, y: 0 },
 }
 
-const objectDisplayNames: Record<UMCPreviewObjectType, string> = {
-  marker: 'Marker',
-  heart: 'Heart',
-  star: 'Star',
-  pin: 'Pin',
-  text: 'Text',
+const roundCoordinate = (value: number): number => {
+  return Math.round(value * 1_000_000) / 1_000_000
 }
+
+const objectDisplayNames: Record<UMCPreviewObjectType, string> = huObjectTypeLabels
 
 const createObject = (
   type: UMCPreviewObjectType,
@@ -74,22 +80,21 @@ const createObject = (
 const createModuleMockObjects = (moduleKind: UMCModuleKind): UMCPreviewObject[] => {
   if (moduleKind === 'city-map') {
     return [
-      createObject('heart', 1, { x: -96, y: -40 }, 'First Date'),
-      createObject('pin', 2, { x: 48, y: 64 }, 'First Home'),
-      createObject('star', 3, { x: 108, y: -92 }, 'Proposal'),
+      createObject('heart', 1, { x: -96, y: -40 }, huUiText.mockLabels.firstDate),
+      createObject('pin', 2, { x: 48, y: 64 }, huUiText.mockLabels.firstHome),
+      createObject('star', 3, { x: 108, y: -92 }, huUiText.mockLabels.proposal),
     ]
   }
 
   if (moduleKind === 'building-map') {
     return [
-      createObject('marker', 1, { x: -88, y: 26 }, 'Main Entrance'),
-      createObject('text', 2, { x: 66, y: -62 }, 'Skyline Focus'),
+      createObject('marker', 1, { x: -88, y: 26 }, huUiText.mockLabels.mainEntrance),
+      createObject('text', 2, { x: 66, y: -62 }, huUiText.mockLabels.skylineFocus),
     ]
   }
 
   return [
-    createObject('star', 1, { x: -38, y: -68 }, 'Birthday Star'),
-    createObject('heart', 2, { x: 44, y: 72 }, 'Anniversary Night'),
+    createObject('text', 1, { x: 0, y: 0 }, huUiText.mockLabels.anniversaryNight),
   ]
 }
 
@@ -135,6 +140,51 @@ export const useConfiguratorState = (): ConfiguratorState => {
     }
   }
 
+  const setSelectedLocation = (location: SelectedLocation) => {
+    setActiveConfig((current) => ({
+      ...current,
+      location: {
+        ...current.location,
+        query: location.displayName,
+        latitude: location.lat,
+        longitude: location.lon,
+      },
+    }))
+    if (activeModule === 'city-map') {
+      setCityPreviewSvg(null)
+      setCityPreviewStatus('idle')
+      setCityPreviewError(null)
+    }
+  }
+
+  const setLocationCoordinates = (latitude: number, longitude: number) => {
+    const roundedLat = roundCoordinate(latitude)
+    const roundedLon = roundCoordinate(longitude)
+
+    let changed = false
+    setActiveConfig((current) => {
+      if (current.location.latitude === roundedLat && current.location.longitude === roundedLon) {
+        return current
+      }
+
+      changed = true
+      return {
+        ...current,
+        location: {
+          ...current.location,
+          latitude: roundedLat,
+          longitude: roundedLon,
+        },
+      }
+    })
+
+    if (changed && activeModule === 'city-map') {
+      setCityPreviewSvg(null)
+      setCityPreviewStatus('idle')
+      setCityPreviewError(null)
+    }
+  }
+
   const setTemplateId = (templateId: string) => {
     setActiveConfig((current) => ({
       ...current,
@@ -147,6 +197,43 @@ export const useConfiguratorState = (): ConfiguratorState => {
       ...current,
       style: { ...current.style, paletteId },
     }))
+  }
+
+  const setTypographyStyle = (typographyStyle: UMCPosterTypographyStyle) => {
+    setActiveConfig((current) => ({
+      ...current,
+      style: { ...current.style, typographyStyle },
+    }))
+  }
+
+  const setStarDateIso = (dateIso: string) => {
+    setActiveConfig((current) => {
+      if (current.moduleKind !== 'star-map') {
+        return current
+      }
+      return {
+        ...current,
+        star: {
+          ...current.star,
+          dateIso,
+        },
+      }
+    })
+  }
+
+  const setStarSkyStyle = (skyStyle: 'constellation' | 'minimal') => {
+    setActiveConfig((current) => {
+      if (current.moduleKind !== 'star-map') {
+        return current
+      }
+      return {
+        ...current,
+        star: {
+          ...current.star,
+          skyStyle,
+        },
+      }
+    })
   }
 
   const toggleObject = (key: keyof UMCPosterConfig['objects']) => {
@@ -176,7 +263,7 @@ export const useConfiguratorState = (): ConfiguratorState => {
     if (!city) {
       setCityPreviewSvg(null)
       setCityPreviewStatus('failed')
-      setCityPreviewError('Enter a city name first.')
+      setCityPreviewError(huUiText.enterCityFirst)
       return
     }
 
@@ -184,7 +271,12 @@ export const useConfiguratorState = (): ConfiguratorState => {
     setCityPreviewError(null)
 
     try {
-      const svg = await fetchCityPreview({ city, style: 'minimal' })
+      const svg = await fetchCityPreview({
+        city,
+        style: 'minimal',
+        latitude: activeConfig.location.latitude,
+        longitude: activeConfig.location.longitude,
+      })
       setCityPreviewSvg(svg)
       setCityPreviewStatus('ready')
     } catch (error) {
@@ -249,8 +341,13 @@ export const useConfiguratorState = (): ConfiguratorState => {
       setActiveModule,
       setTitle,
       setLocationQuery,
+      setSelectedLocation,
+      setLocationCoordinates,
       setTemplateId,
       setPaletteId,
+      setTypographyStyle,
+      setStarDateIso,
+      setStarSkyStyle,
       toggleObject,
       setPlacementType,
       setPreviewViewport,
@@ -272,6 +369,8 @@ export const useConfiguratorState = (): ConfiguratorState => {
       previewObjects,
       previewViewport,
       selectedObjectId,
+      setStarDateIso,
+      setStarSkyStyle,
     ],
   )
 }

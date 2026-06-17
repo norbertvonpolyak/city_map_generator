@@ -4,10 +4,10 @@ import type { UMCModuleDefinition } from './types'
 export const starMapDefaults: StarPosterConfig = {
   schemaVersion: '1.0.0',
   moduleKind: 'star-map',
-  title: 'Star Map Poster',
+  title: 'Csillagtérkép poszter',
   createdAtIso: '2026-01-01T00:00:00.000Z',
   location: {
-    query: 'Reykjavik, Iceland',
+    query: 'Reykjavik, Izland',
     latitude: 64.1466,
     longitude: -21.9426,
     regionHint: 'northern-latitude',
@@ -19,10 +19,11 @@ export const starMapDefaults: StarPosterConfig = {
     sizePreset: '30x45',
   },
   style: {
-    paletteId: 'night-gilded',
+    paletteId: 'nordic',
     tone: 'night',
     lineWeight: 'fine',
     textureEnabled: true,
+    typographyStyle: 'nordic',
   },
   objects: {
     roads: false,
@@ -42,9 +43,9 @@ export const starMapDefaults: StarPosterConfig = {
 
 export const starMapModuleDefinition: UMCModuleDefinition<StarPosterConfig> = {
   kind: 'star-map',
-  label: 'Star Map',
-  tagline: 'Celestial compositions for meaningful moments in time.',
-  previewHint: 'Preview placeholder for star-map output.',
+  label: 'Csillagtérkép',
+  tagline: 'Égi kompozíciók az igazán emlékezetes pillanatokhoz.',
+  previewHint: 'Helyőrző előnézet a csillagtérkép kimenetéhez.',
   availableSections: ['module-selector', 'location', 'template', 'style', 'objects'],
   defaults: starMapDefaults,
   status: 'foundation',

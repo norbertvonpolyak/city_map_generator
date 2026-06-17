@@ -1,4 +1,11 @@
 import type { UMCPosterConfig } from '@umc-shared/types'
+import {
+  huLineWeightLabels,
+  huPaletteLabels,
+  huToneLabels,
+  huUiText,
+  toHuLabel,
+} from '../../content/hu'
 import { SectionCard } from './SectionCard'
 
 interface StyleSectionProps {
@@ -11,11 +18,11 @@ const paletteOptions = ['heritage-sand', 'graphite-ivory', 'night-gilded', 'ambe
 export const StyleSection = ({ config, onPaletteChange }: StyleSectionProps) => {
   return (
     <SectionCard
-      title="Style Section"
-      description="Visual style tokens for upcoming rendering integration."
+      title={huUiText.styleSectionTitle}
+      description={huUiText.styleSectionDescription}
     >
       <label className="flex flex-col gap-1 text-sm text-[var(--umc-ivory-soft)]">
-        Palette
+        {huUiText.palette}
         <select
           value={config.style.paletteId}
           onChange={(event) => onPaletteChange(event.target.value)}
@@ -23,15 +30,17 @@ export const StyleSection = ({ config, onPaletteChange }: StyleSectionProps) => 
         >
           {paletteOptions.map((palette) => (
             <option key={palette} value={palette}>
-              {palette}
+              {toHuLabel(palette, huPaletteLabels)}
             </option>
           ))}
         </select>
       </label>
       <div className="grid grid-cols-2 gap-2 text-sm text-[var(--umc-ivory-soft)]">
-        <div className="rounded-lg border border-[var(--umc-border)] px-3 py-2">Tone: {config.style.tone}</div>
         <div className="rounded-lg border border-[var(--umc-border)] px-3 py-2">
-          Weight: {config.style.lineWeight}
+          {huUiText.tone}: {toHuLabel(config.style.tone, huToneLabels)}
+        </div>
+        <div className="rounded-lg border border-[var(--umc-border)] px-3 py-2">
+          {huUiText.lineWeight}: {toHuLabel(config.style.lineWeight, huLineWeightLabels)}
         </div>
       </div>
     </SectionCard>
