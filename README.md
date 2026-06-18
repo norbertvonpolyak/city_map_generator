@@ -256,6 +256,64 @@ city_map_generator/
 
 # � Known Issues & Resolutions
 
+## Issue: Location Selection Updates Text, but Map Does Not Recenter (2026-06-19)
+
+### Problem Description
+
+In the frontend configurator, selecting a new place from autocomplete updated
+the location label and coordinates, but the live Leaflet preview sometimes only
+zoomed out/in and did not reliably move to the new city center.
+
+### Root Cause
+
+The map sync bridge created a feedback loop between:
+
+1. Programmatic map movement (`flyToBounds` + explicit `setZoom`).
+2. Continuous `move`/`zoomend` center writes back into app state.
+3. A new state-driven move command arriving while the previous animation was
+    still in-flight.
+
+This made center updates nondeterministic and occasionally kept the viewport
+ near the old location.
+
+### Solution Implemented
+
+**File:** `configurator/frontend/src/components/preview/CityLiveMapPreview.tsx`
+
+1. Switched controlled camera updates to explicit center+zoom operations:
+    - initial sync: `map.setView(center, zoom, { animate: false })`
+    - subsequent sync: `map.flyTo(center, zoom, ...)`
+2. Removed high-frequency center propagation during animation:
+    - dropped `move` throttled emitter
+    - dropped `zoomend` emitter
+    - kept only `moveend` center propagation
+3. Kept sync lock (`syncLockUntilRef`) so programmatic camera changes are not
+    immediately mirrored back into state.
+
+### Why This Works
+
+- One source of truth for camera target (`center`, `zoom`) avoids bounds/zoom
+  drift combinations.
+- State is updated only after movement settles (`moveend`), preventing
+  mid-animation rewrites.
+- The two-way sync becomes deterministic instead of oscillating.
+
+### Verification Checklist
+
+1. Open the configurator and expand **Helyszín**.
+2. Select three far-apart cities in sequence (example: Budapest → London → New York).
+3. Confirm after each selection:
+    - location text updates,
+    - latitude/longitude fields update,
+    - the live map center visibly moves to the selected city (not only zoom changes).
+
+### Frontend Guardrails (Do Not Regress)
+
+- Prefer `setView`/`flyTo` for controlled center transitions.
+- Avoid emitting state updates on every `move` event for controlled maps.
+- Do not combine `flyToBounds` with a separate `setZoom` in the same sync step.
+- Keep anti-feedback lock windows around programmatic camera transitions.
+
 ## Issue: Islands Inside Harbors Not Parcelized (v6 Water Fix)
 
 ### Problem Description
