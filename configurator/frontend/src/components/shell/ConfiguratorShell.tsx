@@ -57,6 +57,8 @@ interface ConfiguratorShellProps {
   onSelectPreviewObject: (id: string | null) => void
   onDeletePreviewObject: (id: string) => void
   onDeleteSelectedPreviewObject: () => void
+  printSizeId: string
+  onPrintSizeChange: (sizeId: string) => void
 }
 
 type TextFieldKey = 'title' | 'subtitle' | 'date' | 'custom'
@@ -76,7 +78,6 @@ type StepId = 1 | 2 | 3 | 4
 type ActiveStepId = StepId | null
 
 const frameOptions = umcFrameOptions
-const placementTypesForCity: UMCPreviewObjectType[] = ['heart', 'pin', 'star', 'marker']
 const cityRadiusMaxByStyle: Record<CityMapStyleId, number> = {
   minimal: 50,
   district: 4.5,
@@ -189,13 +190,15 @@ export const ConfiguratorShell = ({
   onSelectPreviewObject,
   onDeletePreviewObject,
   onDeleteSelectedPreviewObject,
+  printSizeId,
+  onPrintSizeChange,
 }: ConfiguratorShellProps) => {
   const [activeStep, setActiveStep] = useState<ActiveStepId>(1)
   const [radiusKm, setRadiusKm] = useState(5)
   const [showRadiusNotice, setShowRadiusNotice] = useState(false)
   const [frameOption, setFrameOption] = useState<FrameOption>('wood-brown')
   const [paperOption] = useState(umcPaperOptions[0])
-  const [sizeOption] = useState(umcSizeOptions[0])
+  const selectedSizeOption = umcSizeOptions.find((s) => s.id === printSizeId) ?? umcSizeOptions[0]
 
   const [posterSubtitle, setPosterSubtitle] = useState('')
   const [posterDateText, setPosterDateText] = useState('')
@@ -245,9 +248,19 @@ export const ConfiguratorShell = ({
   const cityRadiusMaxKm = cityRadiusMaxByStyle[selectedCityStyle.id]
   const radiusStep = selectedCityStyle.id === 'minimal' ? 1 : 0.1
   const paletteThemes = getPaletteThemesForCityStyle(selectedCityStyle.id)
+  const selectedPaletteTheme = paletteThemes.find((item) => item.id === activeConfig.style.paletteId) ?? paletteThemes[0]
   const markerCount = previewObjects.filter((item) => item.type !== 'text').length
   const textObjectCount = previewObjects.filter((item) => item.type === 'text').length
-  const resolvedPrice = resolveUmcPrice(isCityModule ? 'city-map' : 'star-map', frameOption, sizeOption.id, paperOption.id)
+  const resolvedPrice = resolveUmcPrice(isCityModule ? 'city-map' : 'star-map', frameOption, selectedSizeOption.id, paperOption.id)
+  const posterAspectRatio = selectedSizeOption.widthCm / selectedSizeOption.heightCm
+  const shortSideCm = Math.min(selectedSizeOption.widthCm, selectedSizeOption.heightCm)
+  const sideMarginCm = shortSideCm * 0.04
+  const topMarginCm = sideMarginCm
+  const bottomMarginCm = selectedSizeOption.heightCm * 0.10
+  const sideMarginRatio = sideMarginCm / selectedSizeOption.widthCm
+  const topMarginRatio = topMarginCm / selectedSizeOption.heightCm
+  const bottomBandRatio = bottomMarginCm / selectedSizeOption.heightCm
+  const visibleMapAspectRatio = (selectedSizeOption.widthCm - (sideMarginCm * 2)) / (selectedSizeOption.heightCm - topMarginCm - bottomMarginCm)
 
   const selectedStyleLabel = useMemo(() => {
     if (!isCityModule) {
@@ -270,11 +283,11 @@ export const ConfiguratorShell = ({
   const stepCompletion = useMemo(() => {
     return {
       1: activeConfig.location.query.trim().length > 0,
-      2: activeConfig.template.templateId.trim().length > 0 && !!frameOption,
-      3: activeConfig.title.trim().length > 0 || posterSubtitle.trim().length > 0 || posterDateText.trim().length > 0,
-      4: true,
+      2: activeConfig.template.templateId.trim().length > 0,
+      3: !!frameOption && !!printSizeId,
+      4: activeConfig.title.trim().length > 0 || posterSubtitle.trim().length > 0 || posterDateText.trim().length > 0,
     } as Record<1 | 2 | 3 | 4, boolean>
-  }, [activeConfig.location.query, activeConfig.template.templateId, activeConfig.title, frameOption, posterDateText, posterSubtitle])
+  }, [activeConfig.location.query, activeConfig.template.templateId, activeConfig.title, frameOption, printSizeId, posterDateText, posterSubtitle])
 
   const previousCompletion = useRef(stepCompletion)
 
@@ -305,7 +318,7 @@ export const ConfiguratorShell = ({
   }
 
   const focusTextSettingsFromPreview = (field: TextFieldKey) => {
-    setActiveStep(3)
+    setActiveStep(4)
     setOpenTextSettingsField(field)
 
     window.requestAnimationFrame(() => {
@@ -322,9 +335,14 @@ export const ConfiguratorShell = ({
       }
 
       input.scrollIntoView({
-        behavior: 'smooth',
         block: 'center',
+        behavior: 'smooth',
       })
+
+      if (input instanceof HTMLInputElement) {
+        input.focus()
+        input.select()
+      }
     })
   }
 
@@ -569,7 +587,7 @@ export const ConfiguratorShell = ({
     : new Date().toISOString().slice(0, 10)
 
   const stepSummaries = useMemo(() => {
-    const locationLines = stepCompletion[1]
+    const locationLines = stepCompletion[3]
       ? [withCheck(activeConfig.location.query)]
       : [huUiText.summaryNotConfigured]
 
@@ -582,7 +600,11 @@ export const ConfiguratorShell = ({
     }
 
     const frameLabel = frameOptions.find((item) => item.id === frameOption)?.label ?? huUiText.frameNone
-    styleLines.push(withCheck(`${frameLabel} ${huUiText.summaryFrameSuffix}`))
+
+    const kivitelLines = [
+      withCheck(selectedSizeOption.label),
+      withCheck(`${frameLabel} ${huUiText.summaryFrameSuffix}`),
+    ]
 
     const posterLines: string[] = []
     if (activeConfig.title.trim().length > 0) {
@@ -607,6 +629,7 @@ export const ConfiguratorShell = ({
     return {
       locationLines,
       styleLines,
+      kivitelLines,
       posterLines: posterLines.length > 0 ? posterLines : [huUiText.summaryNotConfigured],
       objectLines,
     }
@@ -619,6 +642,8 @@ export const ConfiguratorShell = ({
     posterCustomText,
     posterDateText,
     posterSubtitle,
+    printSizeId,
+    selectedSizeOption,
     activeConfig.style.typographyStyle,
     resolvedPrice,
     selectedStyleLabel,
@@ -636,37 +661,46 @@ export const ConfiguratorShell = ({
 
         <StepCard
           number={1}
-          title={huUiText.stepLocation}
+          title="Kivitel"
           open={activeStep === 1}
-          summaryLines={stepSummaries.locationLines}
+          summaryLines={stepSummaries.kivitelLines}
           onToggle={() => onToggleStep(1)}
         >
-          <label className="umc-field-label">{huUiText.cityLabel}</label>
-          <LocationAutocomplete
-            value={activeConfig.location.query}
-            onSelect={onLocationSelect}
-          />
-
-          <div className="umc-location-coordinates">
-            <div className="umc-location-coordinate-item">
-              <span className="umc-location-coordinate-label">{huUiText.latitude}:</span>
-              <span className="umc-location-coordinate-value">{activeConfig.location.latitude ?? huUiText.notAvailable}</span>
-            </div>
-            <div className="umc-location-coordinate-item">
-              <span className="umc-location-coordinate-label">{huUiText.longitude}:</span>
-              <span className="umc-location-coordinate-value">{activeConfig.location.longitude ?? huUiText.notAvailable}</span>
-            </div>
+          <p className="umc-field-label">Méret</p>
+          <div className="umc-size-grid">
+            {umcSizeOptions.map((size) => (
+              <button
+                key={size.id}
+                type="button"
+                className={printSizeId === size.id ? 'umc-size-card umc-size-card-active' : 'umc-size-card'}
+                onClick={() => onPrintSizeChange(size.id)}
+                title={size.label}
+                aria-label={size.label}
+              >
+                <span
+                  className="umc-size-thumb"
+                  style={{
+                    aspectRatio: `${size.widthCm} / ${size.heightCm}`,
+                  }}
+                />
+                <strong>{size.label}</strong>
+              </button>
+            ))}
           </div>
 
-          {isCityModule ? (
-            <>
-              <button type="button" className="umc-primary-button" onClick={() => void onGenerateCityPreview()}>
-                {huUiText.updatePreview}
+          <p className="umc-field-label">{huUiText.frame}</p>
+          <div className="umc-frame-grid">
+            {frameOptions.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                className={frameOption === option.id ? 'umc-frame-option umc-frame-option-active' : 'umc-frame-option'}
+                onClick={() => setFrameOption(option.id as FrameOption)}
+              >
+                {option.label}
               </button>
-              {cityPreviewStatus === 'failed' ? <p className="umc-error-text">{toHuPreviewError(cityPreviewError)}</p> : null}
-              {cityPreviewStatus === 'city-not-found' ? <p className="umc-error-text">{huUiText.cityNotFound}</p> : null}
-            </>
-          ) : null}
+            ))}
+          </div>
         </StepCard>
 
         <StepCard
@@ -733,27 +767,6 @@ export const ConfiguratorShell = ({
                   </button>
                 ))}
               </div>
-
-              <div className="umc-radius-control">
-                {showRadiusNotice ? (
-                  <p className="umc-radius-notice" role="status">
-                    Nagyobb teruletet valasztottam, ezert a rendereles most picit tobb idot ker.
-                  </p>
-                ) : null}
-                <label className="umc-field-label" htmlFor="radius-range">{huUiText.radius}</label>
-                <input
-                  id="radius-range"
-                  type="range"
-                  min={1}
-                  step={radiusStep}
-                  max={cityRadiusMaxKm}
-                  value={radiusKm}
-                  onChange={(event) => onRadiusChange(Number(event.target.value))}
-                />
-                <p className="umc-helper-text">
-                  {radiusKm} km / max. {cityRadiusMaxKm} km • {huUiText.radiusDescription}
-                </p>
-              </div>
             </>
           ) : (
             <>
@@ -786,28 +799,69 @@ export const ConfiguratorShell = ({
               </label>
             </>
           )}
-
-          <p className="umc-field-label">{huUiText.frame}</p>
-          <div className="umc-frame-grid">
-            {frameOptions.map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                className={frameOption === option.id ? 'umc-frame-option umc-frame-option-active' : 'umc-frame-option'}
-                onClick={() => setFrameOption(option.id as FrameOption)}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
         </StepCard>
 
         <StepCard
           number={3}
-          title={huUiText.stepPosterText}
+          title={huUiText.stepLocation}
           open={activeStep === 3}
-          summaryLines={stepSummaries.posterLines}
+          summaryLines={stepSummaries.locationLines}
           onToggle={() => onToggleStep(3)}
+        >
+          <label className="umc-field-label">{huUiText.cityLabel}</label>
+          <LocationAutocomplete
+            value={activeConfig.location.query}
+            onSelect={onLocationSelect}
+          />
+
+          <div className="umc-location-coordinates">
+            <div className="umc-location-coordinate-item">
+              <span className="umc-location-coordinate-label">{huUiText.latitude}:</span>
+              <span className="umc-location-coordinate-value">{activeConfig.location.latitude ?? huUiText.notAvailable}</span>
+            </div>
+            <div className="umc-location-coordinate-item">
+              <span className="umc-location-coordinate-label">{huUiText.longitude}:</span>
+              <span className="umc-location-coordinate-value">{activeConfig.location.longitude ?? huUiText.notAvailable}</span>
+            </div>
+          </div>
+
+          {isCityModule ? (
+            <>
+              <div className="umc-radius-control">
+                {showRadiusNotice ? (
+                  <p className="umc-radius-notice" role="status">
+                    Nagyobb teruletet valasztottam, ezert a rendereles most picit tobb idot ker.
+                  </p>
+                ) : null}
+                <label className="umc-field-label" htmlFor="radius-range">{huUiText.radius}</label>
+                <input
+                  id="radius-range"
+                  type="range"
+                  min={1}
+                  step={radiusStep}
+                  max={cityRadiusMaxKm}
+                  value={radiusKm}
+                  onChange={(event) => onRadiusChange(Number(event.target.value))}
+                />
+                <p className="umc-helper-text">
+                  {radiusKm} km / max. {cityRadiusMaxKm} km • {huUiText.radiusDescription}
+                </p>
+              </div>
+              <button type="button" className="umc-primary-button" onClick={() => void onGenerateCityPreview()}>
+                {huUiText.updatePreview}
+              </button>
+              {cityPreviewStatus === 'failed' ? <p className="umc-error-text">{toHuPreviewError(cityPreviewError)}</p> : null}
+              {cityPreviewStatus === 'city-not-found' ? <p className="umc-error-text">{huUiText.cityNotFound}</p> : null}
+            </>
+          ) : null}
+        </StepCard>
+
+        <StepCard
+          number={4}
+          title={huUiText.stepPosterText}
+          open={activeStep === 4}
+          summaryLines={stepSummaries.posterLines}
+          onToggle={() => onToggleStep(4)}
         >
           <p className="umc-field-label">{huUiText.typographyStyleTitle}</p>
           <div className="umc-typography-grid">
@@ -932,44 +986,6 @@ export const ConfiguratorShell = ({
           {renderTextSettingsPanel('custom')}
 
         </StepCard>
-
-        <StepCard
-          number={4}
-          title={huUiText.stepObjects}
-          open={activeStep === 4}
-          summaryLines={stepSummaries.objectLines}
-          onToggle={() => onToggleStep(4)}
-        >
-          {isCityModule ? (
-            <>
-              <p className="umc-field-label">{huUiText.objectsForCity}</p>
-              <div className="umc-object-pills">
-                {placementTypesForCity.map((type) => (
-                  <button
-                    key={type}
-                    type="button"
-                    className={placementType === type ? 'umc-pill umc-pill-active' : 'umc-pill'}
-                    onClick={() => onPlacementTypeChange(type)}
-                  >
-                    {huObjectTypeLabels[type]}
-                  </button>
-                ))}
-              </div>
-
-              <div className="umc-object-list">
-                {previewObjects.map((item) => (
-                  <div key={item.id} className={item.id === selectedObjectId ? 'umc-object-row umc-object-row-active' : 'umc-object-row'}>
-                    <button type="button" onClick={() => onSelectPreviewObject(item.id)}>{item.label}</button>
-                    <button type="button" onClick={() => onDeletePreviewObject(item.id)}>{huUiText.delete}</button>
-                  </div>
-                ))}
-              </div>
-            </>
-          ) : (
-            <p className="umc-helper-text">{huUiText.starTextOnly}</p>
-          )}
-        </StepCard>
-
         <section className="umc-style-preview-notice" aria-label={huUiText.stylePreviewNoticeTitle}>
           <span className="umc-style-preview-notice-icon" aria-hidden="true">!</span>
           <div className="umc-style-preview-notice-copy">
@@ -1012,12 +1028,18 @@ export const ConfiguratorShell = ({
           onSelectObject={onSelectPreviewObject}
           onDeleteSelected={onDeleteSelectedPreviewObject}
           onTextFieldFocus={focusTextSettingsFromPreview}
+          posterAspectRatio={posterAspectRatio}
+          visibleMapAspectRatio={visibleMapAspectRatio}
+          sideMarginRatio={sideMarginRatio}
+          topMarginRatio={topMarginRatio}
+          bottomBandRatio={bottomBandRatio}
+          passepartoutColor={selectedPaletteTheme?.colors[0] ?? '#f6f3ee'}
         />
 
         <section className="umc-product-bar">
           <div>
             <p>{huUiText.size}</p>
-            <strong>{sizeOption.label}</strong>
+            <strong>{selectedSizeOption.label}</strong>
           </div>
           <div>
             <p>{huUiText.frame}</p>

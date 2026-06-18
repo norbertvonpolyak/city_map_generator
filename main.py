@@ -114,7 +114,10 @@ def main() -> None:
         use_cache=not args.no_cache,
     )
 
-    print("Preview output:", output_path)
+    print("SVG output:", output_path.output_svg)
+    print("PNG output:", output_path.output_png)
+    if output_path.output_pdf:
+        print("PDF output:", output_path.output_pdf)
 
     total_end = time.perf_counter()
     print(f"Total time : {total_end - total_start:.2f} seconds")

@@ -659,6 +659,46 @@ body {
   position: relative;
 }
 
+.umc-size-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.umc-size-card {
+  border: 1px solid var(--umc-border);
+  border-radius: 8px;
+  background: #fff;
+  padding: 6px;
+  cursor: pointer;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.umc-size-card strong {
+  display: block;
+  font-size: 0.62rem;
+  color: #282621;
+  white-space: nowrap;
+}
+
+.umc-size-thumb {
+  display: block;
+  width: 100%;
+  max-width: 32px;
+  background: #e2ddd5;
+  border-radius: 2px;
+}
+
+.umc-size-card-active {
+  border-color: #152130;
+  box-shadow: 0 0 0 1px rgba(21, 33, 48, 0.25) inset;
+  background: #f0ede8;
+}
+
 .umc-radius-notice {
   margin: 0 0 8px;
   border: 1px solid #dac7a7;
@@ -901,15 +941,65 @@ body {
   gap: 20px;
 }
 
+.umc-poster-sheet-rendered {
+  background: transparent;
+  padding: 0;
+  gap: 0;
+  display: block;
+}
+
 .umc-poster-art {
   position: relative;
-  aspect-ratio: 1 / 1;
   width: 100%;
   border: 1px solid #dfd9cf;
   background:
     repeating-linear-gradient(120deg, rgba(167, 167, 160, 0.22) 0, rgba(167, 167, 160, 0.22) 1px, transparent 1px, transparent 8px),
     linear-gradient(155deg, #f6f3ee, #efebe4);
   overflow: hidden;
+}
+
+.umc-city-poster-sheet {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.umc-city-poster-sheet > svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.umc-city-fallback-sheet {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: var(--umc-city-passepartout-color, #f6f3ee);
+}
+
+.umc-city-fallback-map-shell {
+  position: absolute;
+  left: var(--umc-city-side-margin);
+  right: var(--umc-city-side-margin);
+  top: var(--umc-city-top-margin);
+  bottom: var(--umc-city-bottom-band);
+}
+
+.umc-city-fallback-map-shell .umc-poster-art {
+  width: 100%;
+  height: 100%;
+}
+
+.umc-city-fallback-bottom-band {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--umc-city-bottom-band);
+  display: grid;
+  align-items: center;
+  padding-inline: var(--umc-city-side-margin);
+  background: var(--umc-city-passepartout-color, #f6f3ee);
 }
 
 .umc-live-map {

@@ -12,6 +12,7 @@ def load_or_build_geometry(
     center_lat: float,
     center_lon: float,
     extent_m: int,
+    cache_variant: str = "",
     builder_func: Callable[[], Any],
 ):
     """
@@ -26,7 +27,8 @@ def load_or_build_geometry(
         f"{cache_prefix}_"
         f"{center_lat:.6f}_"
         f"{center_lon:.6f}_"
-        f"{extent_m}.pkl"
+        f"{extent_m}_"
+        f"{cache_variant}.pkl"
     )
 
     cache_path = CACHE_DIR / cache_key

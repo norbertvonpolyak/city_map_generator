@@ -66,48 +66,18 @@ const minimalPaletteThemes: PaletteTheme[] = [
   },
 ]
 
-const fullPaletteThemes: PaletteTheme[] = [
+const districtPaletteThemes: PaletteTheme[] = [
   {
-    id: 'linen',
-    name: 'Linen',
-    description: 'Lágy, világos városblokkok',
-    colors: ['#f3e6ce', '#e8d5b4', '#d7be91', '#c8a97a', '#b69164', '#9f7d55', '#7f6f63'],
+    id: 'urban_modern',
+    name: 'Urban Modern',
+    description: 'Meleg narancs és terrakotta árnyalatok',
+    colors: ['#D9D5C7', '#E8891C', '#D26A1E', '#C65A2A', '#E2C79F', '#5F9F9B', '#2F2F2F'],
   },
   {
-    id: 'stone',
-    name: 'Stone',
-    description: 'Semleges városi árnyalatok',
-    colors: ['#f1f0ee', '#e2dfdc', '#d1cdca', '#bdb9b6', '#a8a4a2', '#8f8d8f', '#6f7176'],
-  },
-  {
-    id: 'nordic',
-    name: 'Nordic',
-    description: 'Hűvös skandináv karakter',
-    colors: ['#e9edf2', '#dbe3ec', '#c8d3df', '#adbccd', '#8fa4bb', '#738ea8', '#58758f'],
-  },
-  {
-    id: 'terra',
-    name: 'Terra',
-    description: 'Meleg földszín kompozíció',
-    colors: ['#f2dfc8', '#e6ccad', '#d8b589', '#c89d69', '#b18253', '#966b45', '#715542'],
-  },
-  {
-    id: 'slate',
-    name: 'Slate',
-    description: 'Grafit és kő tónusok',
-    colors: ['#e7e8ea', '#cfd3d8', '#b5bcc4', '#99a5b2', '#7c8998', '#5f6b79', '#424d5a'],
-  },
-  {
-    id: 'mist',
-    name: 'Mist',
-    description: 'Párás, lágy átmenetek',
-    colors: ['#f1f2f0', '#e2e6e1', '#d3dad4', '#c2cec7', '#a9bdb4', '#8ea59a', '#70867a'],
-  },
-  {
-    id: 'copper',
-    name: 'Copper',
-    description: 'Réz és bronz hangulat',
-    colors: ['#f2dec8', '#e2c49f', '#d0a67b', '#bb885c', '#a9714e', '#8d5a3f', '#6b4535'],
+    id: 'minimal_sand',
+    name: 'Minimal Sand',
+    description: 'Letisztult homok és szürke tónusok',
+    colors: ['#E9E4DA', '#F2EEE6', '#CFC6B6', '#B8AEA0', '#9C9286', '#BFD1D6', '#2C2C2C'],
   },
 ]
 
@@ -116,5 +86,7 @@ export const resolveCityStyleFromTemplate = (templateId: string): CityMapStylePr
 }
 
 export const getPaletteThemesForCityStyle = (styleId: CityMapStyleId): PaletteTheme[] => {
-  return styleId === 'minimal' ? minimalPaletteThemes : fullPaletteThemes
+  if (styleId === 'minimal') return minimalPaletteThemes
+  if (styleId === 'district') return districtPaletteThemes
+  return []
 }

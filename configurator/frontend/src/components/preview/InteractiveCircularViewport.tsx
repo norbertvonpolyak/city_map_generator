@@ -43,6 +43,12 @@ interface InteractiveCircularViewportProps {
   onSelectObject: (id: string | null) => void
   onDeleteSelected: () => void
   onTextFieldFocus: (field: 'title' | 'subtitle' | 'date' | 'custom') => void
+  posterAspectRatio: number
+  visibleMapAspectRatio: number
+  sideMarginRatio: number
+  topMarginRatio: number
+  bottomBandRatio: number
+  passepartoutColor: string
 }
 
 interface TextAppearanceSettings {
@@ -124,6 +130,12 @@ export const InteractiveCircularViewport = ({
   onSelectObject,
   onDeleteSelected,
   onTextFieldFocus,
+  posterAspectRatio,
+  visibleMapAspectRatio,
+  sideMarginRatio,
+  topMarginRatio,
+  bottomBandRatio,
+  passepartoutColor,
 }: InteractiveCircularViewportProps) => {
   const canvasRef = useRef<HTMLDivElement | null>(null)
   const [dragState, setDragState] = useState<DragState | null>(null)
@@ -275,6 +287,108 @@ export const InteractiveCircularViewport = ({
     } as CSSProperties
   }, [customTextAppearance])
 
+  const cityHasComposedPoster = moduleKind === 'city-map' && !!cityPreviewSvg
+  const cityFallbackLayoutStyle = useMemo(() => {
+    return {
+      '--umc-city-side-margin': `${sideMarginRatio * 100}%`,
+      '--umc-city-top-margin': `${topMarginRatio * 100}%`,
+      '--umc-city-bottom-band': `${bottomBandRatio * 100}%`,
+      '--umc-city-passepartout-color': passepartoutColor,
+    } as CSSProperties
+  }, [bottomBandRatio, passepartoutColor, sideMarginRatio, topMarginRatio])
+
+  const fallbackCanvas = moduleKind === 'city-map'
+    ? (
+        <div className="umc-city-fallback-sheet" style={cityFallbackLayoutStyle}>
+          <div className="umc-city-fallback-map-shell">
+            <div
+              ref={canvasRef}
+              className="umc-poster-art"
+              onPointerDown={onCanvasPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={onPointerUp}
+              onPointerCancel={onPointerUp}
+              onClick={() => onSelectObject(null)}
+            >
+              <CityLiveMapPreview
+                latitude={locationLatitude}
+                longitude={locationLongitude}
+                radiusKm={radiusKm}
+                posterAspectRatio={visibleMapAspectRatio}
+                onCenterChange={onLocationCenterChange}
+              />
+
+              {cityPreviewStatus === 'loading' ? (
+                <div className="umc-preview-loading-overlay" role="status" aria-live="polite">
+                  <span className="umc-preview-loading-spinner" aria-hidden="true" />
+                  <div className="umc-preview-loading-copy">
+                    <strong>{huUiText.renderInProgressTitle}</strong>
+                    <span>{huUiText.renderInProgressHint}</span>
+                  </div>
+                </div>
+              ) : null}
+
+              {cityPreviewStatus !== 'idle' && cityPreviewStatus !== 'loading' && !cityPreviewSvg ? (
+                <div className="umc-preview-status-badge">
+                  {cityPreviewStatus === 'city-not-found'
+                    ? huUiText.previewStatusCityNotFound
+                    : huUiText.previewStatusFailed}
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="umc-city-fallback-bottom-band">
+            {typographyStyle === 'urban' ? (
+              <div className="umc-poster-typo umc-poster-typo-urban" style={posterTypeStyle}>
+                <div className="umc-poster-urban-accent" aria-hidden="true" />
+                <div className="umc-poster-urban-copy">
+                  <h2 className="umc-poster-title umc-preview-text-clickable" onClick={() => onTextFieldFocus('title')}>{title || huUiText.defaultPosterTitle}</h2>
+                  <p className="umc-poster-subtitle umc-preview-text-clickable" style={subtitleTypeStyle} onClick={() => onTextFieldFocus('subtitle')}>{posterSubtitle || subtitle || huUiText.defaultPosterSubtitle}</p>
+                  {urbanCustomLabel ? (
+                    <p className="umc-poster-urban-coordinates umc-preview-text-clickable" style={customTypeStyle} onClick={() => onTextFieldFocus('custom')}>{urbanCustomLabel}</p>
+                  ) : null}
+                  {posterDate ? <p className="umc-poster-meta umc-preview-text-clickable" style={dateTypeStyle} onClick={() => onTextFieldFocus('date')}>{posterDate}</p> : null}
+                </div>
+              </div>
+            ) : typographyStyle === 'nordic' ? (
+              <div className="umc-poster-typo umc-poster-typo-nordic" style={posterTypeStyle}>
+                <h2 className="umc-poster-title umc-preview-text-clickable" onClick={() => onTextFieldFocus('title')}>{title || huUiText.defaultPosterTitle}</h2>
+                <div className="umc-poster-nordic-subline">
+                  <span className="umc-poster-nordic-line" aria-hidden="true" />
+                  <p className="umc-poster-subtitle umc-preview-text-clickable" style={subtitleTypeStyle} onClick={() => onTextFieldFocus('subtitle')}>{posterSubtitle || subtitle || huUiText.defaultPosterSubtitle}</p>
+                  <span className="umc-poster-nordic-line" aria-hidden="true" />
+                </div>
+                <p className="umc-poster-nordic-dot" aria-hidden="true">•</p>
+                {posterDate ? <p className="umc-poster-meta umc-preview-text-clickable" style={dateTypeStyle} onClick={() => onTextFieldFocus('date')}>{posterDate}</p> : null}
+                {posterCustomText ? <p className="umc-poster-meta umc-preview-text-clickable" style={customTypeStyle} onClick={() => onTextFieldFocus('custom')}>{posterCustomText}</p> : null}
+              </div>
+            ) : (
+              <div className={`umc-poster-typo umc-poster-typo-${typographyStyle}`} style={posterTypeStyle}>
+                <h2 className="umc-poster-title umc-preview-text-clickable" onClick={() => onTextFieldFocus('title')}>{title || huUiText.defaultPosterTitle}</h2>
+                <p className="umc-poster-subtitle umc-preview-text-clickable" style={subtitleTypeStyle} onClick={() => onTextFieldFocus('subtitle')}>{posterSubtitle || subtitle || huUiText.defaultPosterSubtitle}</p>
+                <div className="umc-typo-divider" />
+                {posterDate ? <p className="umc-poster-meta umc-preview-text-clickable" style={dateTypeStyle} onClick={() => onTextFieldFocus('date')}>{posterDate}</p> : null}
+                {posterCustomText ? <p className="umc-poster-meta umc-preview-text-clickable" style={customTypeStyle} onClick={() => onTextFieldFocus('custom')}>{posterCustomText}</p> : null}
+              </div>
+            )}
+          </div>
+        </div>
+      )
+    : (
+        <div
+          ref={canvasRef}
+          className="umc-poster-art"
+          onPointerDown={onCanvasPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerUp}
+          onClick={() => onSelectObject(null)}
+        >
+          <ModuleMockMapLayer moduleKind={moduleKind} />
+        </div>
+      )
+
   return (
     <div className="flex h-full flex-col gap-4">
       <div className="umc-preview-toolbar">
@@ -306,83 +420,21 @@ export const InteractiveCircularViewport = ({
 
       <div className="umc-stage-wrap">
         <div className={frameClass}>
-          <article className="umc-poster-sheet">
-            <div
-              ref={canvasRef}
-              className="umc-poster-art"
-              onPointerDown={onCanvasPointerDown}
-              onPointerMove={onPointerMove}
-              onPointerUp={onPointerUp}
-              onPointerCancel={onPointerUp}
-              onClick={() => onSelectObject(null)}
-            >
-              {moduleKind === 'city-map' ? (
-                <CityLiveMapPreview
-                  latitude={locationLatitude}
-                  longitude={locationLongitude}
-                  radiusKm={radiusKm}
-                  onCenterChange={onLocationCenterChange}
-                  onPlacementClick={(point) => {
-                    if (placementType === 'text') {
-                      return
-                    }
-                    onAddObject(placementType, point)
-                  }}
-                />
-              ) : (
-                <ModuleMockMapLayer moduleKind={moduleKind} />
-              )}
+          <article
+            className={moduleKind === 'city-map' ? 'umc-poster-sheet umc-poster-sheet-rendered' : 'umc-poster-sheet'}
+            style={{ aspectRatio: String(posterAspectRatio) }}
+          >
+            {cityHasComposedPoster ? (
+              <div
+                className="umc-city-poster-sheet"
+                aria-hidden="true"
+                dangerouslySetInnerHTML={{ __html: cityPreviewSvg }}
+              />
+            ) : null}
 
-              {moduleKind === 'city-map' && cityPreviewSvg ? (
-                <div
-                  className="umc-city-preview absolute inset-0 pointer-events-none"
-                  aria-hidden="true"
-                  dangerouslySetInnerHTML={{ __html: cityPreviewSvg }}
-                />
-              ) : null}
+            {!cityHasComposedPoster ? fallbackCanvas : null}
 
-              {moduleKind === 'city-map' && cityPreviewStatus === 'loading' ? (
-                <div className="umc-preview-loading-overlay" role="status" aria-live="polite">
-                  <span className="umc-preview-loading-spinner" aria-hidden="true" />
-                  <div className="umc-preview-loading-copy">
-                    <strong>{huUiText.renderInProgressTitle}</strong>
-                    <span>{huUiText.renderInProgressHint}</span>
-                  </div>
-                </div>
-              ) : null}
-
-              {moduleKind === 'city-map' && cityPreviewStatus !== 'idle' && cityPreviewStatus !== 'loading' && !cityPreviewSvg ? (
-                <div className="umc-preview-status-badge">
-                  {cityPreviewStatus === 'city-not-found'
-                    ? huUiText.previewStatusCityNotFound
-                    : huUiText.previewStatusFailed}
-                </div>
-              ) : null}
-
-              {markerObjects.map((object) => {
-                const selected = object.id === selectedObjectId
-                return (
-                  <button
-                    key={object.id}
-                    type="button"
-                    className={selected ? 'umc-object-chip umc-object-chip-active' : 'umc-object-chip'}
-                    style={{
-                      left: `calc(50% + ${object.position.x}px)`,
-                      top: `calc(50% + ${object.position.y}px)`,
-                    }}
-                    onPointerDown={(event) => onMarkerPointerDown(event, object)}
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      onSelectObject(object.id)
-                    }}
-                  >
-                    <span>{objectIcon[object.type]}</span>
-                  </button>
-                )
-              })}
-            </div>
-
-            {typographyStyle === 'urban' ? (
+            {!cityHasComposedPoster && moduleKind !== 'city-map' ? (typographyStyle === 'urban' ? (
               <div className="umc-poster-typo umc-poster-typo-urban" style={posterTypeStyle}>
                 <div className="umc-poster-urban-accent" aria-hidden="true" />
                 <div className="umc-poster-urban-copy">
@@ -392,9 +444,6 @@ export const InteractiveCircularViewport = ({
                     <p className="umc-poster-urban-coordinates umc-preview-text-clickable" style={customTypeStyle} onClick={() => onTextFieldFocus('custom')}>{urbanCustomLabel}</p>
                   ) : null}
                   {posterDate ? <p className="umc-poster-meta umc-preview-text-clickable" style={dateTypeStyle} onClick={() => onTextFieldFocus('date')}>{posterDate}</p> : null}
-                  {textObjects.map((item) => (
-                    <p key={item.id} className="umc-poster-meta umc-preview-text-clickable" style={customTypeStyle} onClick={() => onTextFieldFocus('custom')}>{item.label}</p>
-                  ))}
                 </div>
               </div>
             ) : typographyStyle === 'nordic' ? (
@@ -408,9 +457,6 @@ export const InteractiveCircularViewport = ({
                 <p className="umc-poster-nordic-dot" aria-hidden="true">•</p>
                 {posterDate ? <p className="umc-poster-meta umc-preview-text-clickable" style={dateTypeStyle} onClick={() => onTextFieldFocus('date')}>{posterDate}</p> : null}
                 {posterCustomText ? <p className="umc-poster-meta umc-preview-text-clickable" style={customTypeStyle} onClick={() => onTextFieldFocus('custom')}>{posterCustomText}</p> : null}
-                {textObjects.map((item) => (
-                  <p key={item.id} className="umc-poster-meta umc-preview-text-clickable" style={customTypeStyle} onClick={() => onTextFieldFocus('custom')}>{item.label}</p>
-                ))}
               </div>
             ) : (
               <div className={`umc-poster-typo umc-poster-typo-${typographyStyle}`} style={posterTypeStyle}>
@@ -419,18 +465,10 @@ export const InteractiveCircularViewport = ({
                 <div className="umc-typo-divider" />
                 {posterDate ? <p className="umc-poster-meta umc-preview-text-clickable" style={dateTypeStyle} onClick={() => onTextFieldFocus('date')}>{posterDate}</p> : null}
                 {posterCustomText ? <p className="umc-poster-meta umc-preview-text-clickable" style={customTypeStyle} onClick={() => onTextFieldFocus('custom')}>{posterCustomText}</p> : null}
-                {textObjects.map((item) => (
-                  <p key={item.id} className="umc-poster-meta umc-preview-text-clickable" style={customTypeStyle} onClick={() => onTextFieldFocus('custom')}>{item.label}</p>
-                ))}
               </div>
-            )}
+            )) : null}
           </article>
         </div>
-      </div>
-
-      <div className="umc-preview-hints">
-        <span>{huUiText.previewHelpPlacement}</span>
-        <button type="button" onClick={onDeleteSelected}>{huUiText.delete}</button>
       </div>
     </div>
   )

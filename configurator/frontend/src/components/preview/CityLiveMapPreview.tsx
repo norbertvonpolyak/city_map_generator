@@ -12,6 +12,7 @@ interface CityLiveMapPreviewProps {
   latitude: number | null
   longitude: number | null
   radiusKm: number
+  posterAspectRatio: number
   onCenterChange?: (latitude: number, longitude: number) => void
   onPlacementClick?: (point: PreviewPoint) => void
 }
@@ -32,10 +33,11 @@ interface FlyToControllerProps {
   latitude: number | null
   longitude: number | null
   radiusKm: number
+  posterAspectRatio: number
   syncLockUntilRef: MutableRefObject<number>
 }
 
-const FlyToController = ({ latitude, longitude, radiusKm, syncLockUntilRef }: FlyToControllerProps) => {
+const FlyToController = ({ latitude, longitude, radiusKm, posterAspectRatio, syncLockUntilRef }: FlyToControllerProps) => {
   const map = useMap()
   const firstSyncDoneRef = useRef(false)
 
@@ -67,7 +69,7 @@ const FlyToController = ({ latitude, longitude, radiusKm, syncLockUntilRef }: Fl
       duration: 1.15,
       easeLinearity: 0.2,
     })
-  }, [latitude, longitude, map, radiusKm, syncLockUntilRef])
+  }, [latitude, longitude, map, posterAspectRatio, radiusKm, syncLockUntilRef])
 
   return null
 }
@@ -101,8 +103,6 @@ interface CenterSyncBridgeProps {
 }
 
 const CenterSyncBridge = ({ onCenterChange, syncLockUntilRef }: CenterSyncBridgeProps) => {
-  const lastEmitAtRef = useRef(0)
-
   const emitCenter = (mapInstance: ReturnType<typeof useMap>) => {
     if (!onCenterChange) {
       return
@@ -117,30 +117,15 @@ const CenterSyncBridge = ({ onCenterChange, syncLockUntilRef }: CenterSyncBridge
   }
 
   const map = useMapEvents({
-    move() {
-      const now = performance.now()
-      if (now - lastEmitAtRef.current < 120) {
-        return
-      }
-      lastEmitAtRef.current = now
-      emitCenter(map)
-    },
     moveend() {
-      emitCenter(map)
-    },
-    zoomend() {
       emitCenter(map)
     },
   })
 
-  useEffect(() => {
-    emitCenter(map)
-  }, [map])
-
   return null
 }
 
-export const CityLiveMapPreview = ({ latitude, longitude, radiusKm, onCenterChange, onPlacementClick }: CityLiveMapPreviewProps) => {
+export const CityLiveMapPreview = ({ latitude, longitude, radiusKm, posterAspectRatio, onCenterChange, onPlacementClick }: CityLiveMapPreviewProps) => {
   const syncLockUntilRef = useRef(0)
 
   const startCenter: [number, number] = latitude != null && longitude != null
@@ -148,8 +133,8 @@ export const CityLiveMapPreview = ({ latitude, longitude, radiusKm, onCenterChan
     : BUDAPEST_CENTER
 
   const initialBounds: [[number, number], [number, number]] = [
-    [startCenter[0] - 0.24, startCenter[1] - 0.24],
-    [startCenter[0] + 0.24, startCenter[1] + 0.24],
+    [startCenter[0] - 0.24, startCenter[1] - (0.24 * posterAspectRatio)],
+    [startCenter[0] + 0.24, startCenter[1] + (0.24 * posterAspectRatio)],
   ]
 
   return (
@@ -170,6 +155,7 @@ export const CityLiveMapPreview = ({ latitude, longitude, radiusKm, onCenterChan
           latitude={latitude}
           longitude={longitude}
           radiusKm={radiusKm}
+          posterAspectRatio={posterAspectRatio}
           syncLockUntilRef={syncLockUntilRef}
         />
         <CenterSyncBridge onCenterChange={onCenterChange} syncLockUntilRef={syncLockUntilRef} />

@@ -21,6 +21,7 @@ export interface ConfiguratorState {
   cityPreviewSvg: string | null
   cityPreviewStatus: 'idle' | 'loading' | 'ready' | 'city-not-found' | 'failed'
   cityPreviewError: string | null
+  printSizeId: string
   setActiveModule: (moduleKind: UMCModuleKind) => void
   setTitle: (title: string) => void
   setLocationQuery: (query: string) => void
@@ -41,6 +42,7 @@ export interface ConfiguratorState {
   selectObject: (id: string | null) => void
   deleteObject: (id: string) => void
   deleteSelectedObject: () => void
+  setPrintSizeId: (sizeId: string) => void
 }
 
 const cloneConfig = <T,>(value: T): T => {
@@ -112,6 +114,9 @@ export const useConfiguratorState = (): ConfiguratorState => {
   const [cityPreviewSvg, setCityPreviewSvg] = useState<string | null>(null)
   const [cityPreviewStatus, setCityPreviewStatus] = useState<'idle' | 'loading' | 'ready' | 'city-not-found' | 'failed'>('idle')
   const [cityPreviewError, setCityPreviewError] = useState<string | null>(null)
+  const [printSizeId, setPrintSizeIdState] = useState<string>('50x70')
+
+  const setPrintSizeId = (sizeId: string) => setPrintSizeIdState(sizeId)
 
   const setActiveModule = (moduleKind: UMCModuleKind) => {
     setActiveModuleState(moduleKind)
@@ -271,13 +276,15 @@ export const useConfiguratorState = (): ConfiguratorState => {
     setCityPreviewError(null)
 
     try {
-      const svg = await fetchCityPreview({
+      const assets = await fetchCityPreview({
         city,
         style: 'minimal',
         latitude: activeConfig.location.latitude,
         longitude: activeConfig.location.longitude,
+        sizeKey: printSizeId,
+        extentM: Math.round(radiusKm * 1000),
       })
-      setCityPreviewSvg(svg)
+      setCityPreviewSvg(assets.svg)
       setCityPreviewStatus('ready')
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Preview Generation Failed'
@@ -338,6 +345,7 @@ export const useConfiguratorState = (): ConfiguratorState => {
       cityPreviewSvg,
       cityPreviewStatus,
       cityPreviewError,
+      printSizeId,
       setActiveModule,
       setTitle,
       setLocationQuery,
@@ -358,6 +366,7 @@ export const useConfiguratorState = (): ConfiguratorState => {
       selectObject,
       deleteObject,
       deleteSelectedObject,
+      setPrintSizeId,
     }),
     [
       activeConfig,
@@ -365,6 +374,7 @@ export const useConfiguratorState = (): ConfiguratorState => {
       cityPreviewError,
       cityPreviewSvg,
       cityPreviewStatus,
+      printSizeId,
       placementType,
       previewObjects,
       previewViewport,

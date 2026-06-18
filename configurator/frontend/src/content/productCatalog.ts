@@ -9,8 +9,10 @@ export interface UMCFrameOption {
 }
 
 export interface UMCSizeOption {
-  id: '50x50'
+  id: string
   label: string
+  widthCm: number
+  heightCm: number
 }
 
 export interface UMCPaperOption {
@@ -21,7 +23,7 @@ export interface UMCPaperOption {
 export interface UMCPriceOption {
   productTypeId: UMCProductTypeOption['id']
   frameId: UMCFrameOption['id']
-  sizeId: UMCSizeOption['id']
+  sizeId: string
   paperId: UMCPaperOption['id']
   amountHuf: number
 }
@@ -39,7 +41,13 @@ export const umcFrameOptions: UMCFrameOption[] = [
 ]
 
 export const umcSizeOptions: UMCSizeOption[] = [
-  { id: '50x50', label: '50x50 cm' },
+  { id: '40x50', label: '40 × 50 cm', widthCm: 40, heightCm: 50 },
+  { id: '50x40', label: '50 × 40 cm', widthCm: 50, heightCm: 40 },
+  { id: '50x50', label: '50 × 50 cm', widthCm: 50, heightCm: 50 },
+  { id: '50x70', label: '50 × 70 cm', widthCm: 50, heightCm: 70 },
+  { id: '70x50', label: '70 × 50 cm', widthCm: 70, heightCm: 50 },
+  { id: '60x90', label: '60 × 90 cm', widthCm: 60, heightCm: 90 },
+  { id: '90x60', label: '90 × 60 cm', widthCm: 90, heightCm: 60 },
 ]
 
 export const umcPaperOptions: UMCPaperOption[] = [

@@ -71,6 +71,10 @@ def render_map_building(
     center_lat: float,
     center_lon: float,
     spec: ProductSpec,
+    map_width_cm: float,
+    map_height_cm: float,
+    viewport_half_width_m: float,
+    viewport_half_height_m: float,
     output_dir: Path,
     palette_name: str,
     seed: Optional[int] = 42,
@@ -98,8 +102,9 @@ def render_map_building(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    fig_w_in, fig_h_in = spec.fig_size_inches
-    half_width_m, half_height_m = spec.frame_half_sizes_m
+    fig_w_in = map_width_cm / 2.54
+    fig_h_in = map_height_cm / 2.54
+    half_width_m, half_height_m = viewport_half_width_m, viewport_half_height_m
 
     half_width_m *= zoom
     half_height_m *= zoom
@@ -650,6 +655,7 @@ def render_map_building(
     ax.set_xlim(minx, maxx)
     ax.set_ylim(miny, maxy)
     ax.set_axis_off()
+    ax.set_position([0, 0, 1, 1])
 
     # =============================================================================
     # SAVE
@@ -662,7 +668,6 @@ def render_map_building(
         fig.savefig(
             output_path,
             dpi=140,
-            bbox_inches="tight",
             pad_inches=0,
         )
 
@@ -674,7 +679,7 @@ def render_map_building(
             output_path,
             format="svg",
             dpi=spec.dpi,
-            bbox_inches="tight",
+            pad_inches=0,
         )
 
     plt.close(fig)

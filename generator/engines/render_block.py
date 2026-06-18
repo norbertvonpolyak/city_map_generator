@@ -55,6 +55,10 @@ def render_map_block(
     center_lat: float,
     center_lon: float,
     spec: ProductSpec,
+    map_width_cm: float,
+    map_height_cm: float,
+    viewport_half_width_m: float,
+    viewport_half_height_m: float,
     output_dir: Optional[Path] = None,
     palette_name: str,
     seed: int = 42,
@@ -69,16 +73,14 @@ def render_map_block(
 
     style_cfg = get_style_config(palette_name)
 
-    inner_width_cm = spec.width_cm - 2
-    inner_height_cm = spec.height_cm - 5
+    inner_width_cm = map_width_cm
+    inner_height_cm = map_height_cm
 
     fig_w_in = inner_width_cm / 2.54
     fig_h_in = inner_height_cm / 2.54
 
-    inner_ratio = inner_width_cm / inner_height_cm
-
-    half_height_m = spec.extent_m
-    half_width_m = half_height_m * inner_ratio
+    half_height_m = viewport_half_height_m
+    half_width_m = viewport_half_width_m
 
     dist_m = int(math.ceil(math.sqrt(half_width_m**2 + half_height_m**2))) + 300
 
@@ -389,6 +391,7 @@ def render_map_block(
             center_lat=center_lat,
             center_lon=center_lon,
             extent_m=spec.extent_m,
+            cache_variant=f"{half_width_m:.2f}x{half_height_m:.2f}",
             builder_func=_build_geometry,
         )
     else:
@@ -449,8 +452,7 @@ def render_map_block(
     ax.set_xlim(minx, maxx)
     ax.set_ylim(miny, maxy)
     ax.set_axis_off()
-
-    plt.tight_layout()
+    ax.set_position([0, 0, 1, 1])
 
     output_svg = None
     output_png = None
@@ -464,7 +466,6 @@ def render_map_block(
         fig.savefig(
             output_svg,
             format="svg",
-            bbox_inches="tight",
             pad_inches=0,
         )
 
@@ -474,7 +475,6 @@ def render_map_block(
             output_png_path,
             format="png",
             dpi=spec.dpi,
-            bbox_inches="tight",
             pad_inches=0,
         )
         output_png = output_png_path

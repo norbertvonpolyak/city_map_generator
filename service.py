@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import base64
 import logging
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 import re
@@ -44,13 +46,19 @@ def _slugify(value: str) -> str:
     return slug.strip("-") or "city"
 
 
+@dataclass
+class CityPreviewResult:
+    svg: str
+    png_base64: str
+
+
 def generate_city_preview_svg(
     *,
     city: str,
     style: str = "minimal",
     size_key: str = PREVIEW_SIZE_KEY,
     extent_m: int = PREVIEW_EXTENT_M,
-) -> str:
+) -> CityPreviewResult:
     logger.info(
         "City preview request start: city=%s style=%s size_key=%s extent_m=%s",
         city,
@@ -76,7 +84,7 @@ def generate_city_preview_svg(
             True,
         )
 
-        output_path = render_product(
+        result = render_product(
             style_name=palette_name,
             center_lat=latitude,
             center_lon=longitude,
@@ -88,19 +96,17 @@ def generate_city_preview_svg(
             use_cache=True,
         )
 
-        logger.info("City preview render_product output_path=%s", output_path)
+        logger.info("City preview render_product result=%s", result)
 
-        if output_path is None:
-            raise RuntimeError("Preview generation failed: render_product returned no output path.")
+        if not result.output_svg.exists():
+            raise RuntimeError(f"Preview generation failed: SVG not found at {result.output_svg}")
+        if not result.output_png.exists():
+            raise RuntimeError(f"Preview generation failed: PNG not found at {result.output_png}")
 
-        logger.info("City preview output exists check: path=%s exists=%s", output_path, output_path.exists())
-
-        if not output_path.exists():
-            raise RuntimeError(f"Preview generation failed: SVG file not found at {output_path}")
-
-        svg_text = output_path.read_text(encoding="utf-8")
-        logger.info("City preview SVG read success: bytes=%s", len(svg_text.encode('utf-8')))
-        return svg_text
+        svg_text = result.output_svg.read_text(encoding="utf-8")
+        png_base64 = base64.b64encode(result.output_png.read_bytes()).decode("ascii")
+        logger.info("City preview success: svg_bytes=%s png_bytes=%s", len(svg_text.encode('utf-8')), len(result.output_png.read_bytes()))
+        return CityPreviewResult(svg=svg_text, png_base64=png_base64)
     except Exception:
         logger.exception("City preview generation failed")
         raise
@@ -134,7 +140,7 @@ def generate_preview(
     )
 
     try:
-        output_path = render_product(
+        result = render_product(
             style_name=_normalize_style(palette),
             center_lat=lat,
             center_lon=lon,
@@ -146,17 +152,12 @@ def generate_preview(
             use_cache=True,
         )
 
-        logger.info("Legacy preview render_product output_path=%s", output_path)
+        logger.info("Legacy preview result=%s", result)
 
-        if output_path is None:
-            raise RuntimeError("Preview generation failed: render_product returned no output path.")
+        if not result.output_svg.exists():
+            raise RuntimeError(f"Preview generation failed: SVG not found at {result.output_svg}")
 
-        logger.info("Legacy preview output exists check: path=%s exists=%s", output_path, output_path.exists())
-
-        if not output_path.exists():
-            raise RuntimeError(f"Preview generation failed: SVG file not found at {output_path}")
-
-        return output_path.read_text(encoding="utf-8").encode("utf-8")
+        return result.output_svg.read_text(encoding="utf-8").encode("utf-8")
     except Exception:
         logger.exception("Legacy preview generation failed")
         raise

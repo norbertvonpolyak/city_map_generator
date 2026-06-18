@@ -12,4 +12,6 @@ networkx==3.6.1
 pillow==12.1.0
 reportlab==4.4.9
 svglib==1.6.0
+cairosvg==2.7.1
+pymupdf==1.26.5
 scipy==1.17.0

@@ -17,6 +17,7 @@ export const LocationAutocomplete = ({ value, onSelect }: LocationAutocompletePr
   const [highlightedIndex, setHighlightedIndex] = useState(0)
   const [hasSearched, setHasSearched] = useState(false)
   const wrapperRef = useRef<HTMLDivElement | null>(null)
+  const suppressNextSearchRef = useRef(false)
   const listId = useId()
 
   useEffect(() => {
@@ -38,6 +39,11 @@ export const LocationAutocomplete = ({ value, onSelect }: LocationAutocompletePr
   }, [])
 
   useEffect(() => {
+    if (suppressNextSearchRef.current) {
+      suppressNextSearchRef.current = false
+      return
+    }
+
     const trimmedQuery = query.trim()
 
     if (trimmedQuery.length < 3) {
@@ -95,8 +101,11 @@ export const LocationAutocomplete = ({ value, onSelect }: LocationAutocompletePr
   }
 
   const selectLocation = (location: SelectedLocation) => {
+    suppressNextSearchRef.current = true
     setQuery(location.displayName)
+    setItems([])
     setIsOpen(false)
+    setHasSearched(false)
     onSelect(location)
   }
 

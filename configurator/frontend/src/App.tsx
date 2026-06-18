@@ -31,6 +31,8 @@ function App() {
     selectObject,
     deleteObject,
     deleteSelectedObject,
+    printSizeId,
+    setPrintSizeId,
   } = useConfiguratorState()
 
   return (
@@ -63,6 +65,8 @@ function App() {
       onSelectPreviewObject={selectObject}
       onDeletePreviewObject={deleteObject}
       onDeleteSelectedPreviewObject={deleteSelectedObject}
+      printSizeId={printSizeId}
+      onPrintSizeChange={setPrintSizeId}
     />
   )
 }

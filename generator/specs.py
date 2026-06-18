@@ -10,21 +10,16 @@ from typing import Tuple, List
 # FONTOS: itt minden termékvonal közös "univerzális" listája lehet,
 # a termékvonal-specifikus szűrést a get_allowed_size_keys() csinálja.
 SIZES_CM = {
-
-    "30x40": (30, 40),
-    "40x30": (40, 30),
-
     "40x50": (40, 50),
     "50x40": (50, 40),  # <-- FIX: eddig hibásan 40x50 volt
 
     "50x70": (50, 70),
     "70x50": (70, 50),
 
-    "61x91": (61, 91),
-    "91x61": (91, 61),
-
-    "32x32": (32, 32),
     "50x50": (50, 50),
+
+    "60x90": (60, 90),
+    "90x60": (90, 60),
 }
 
 DEFAULT_EXTENT_M = 5000  # félmagasság méterben (default)
@@ -40,11 +35,8 @@ def get_allowed_size_keys(product_line: ProductLine) -> List[str]:
     Termékvonal-specifikus méretkínálat.
 
     DÖNTÉSEID:
-    - STARMAP: csak álló méretek (21x30, 30x40, 40x50) + speciális 50x50
-    - CITYMAP: nem érinti, maradhat a teljes választék
+    - minden termékvonal ugyanazt a hét poster formátumot használja
     """
-    if product_line == ProductLine.STARMAP:
-        return ["21x30", "30x40", "40x50", "50x50"]
     return list(SIZES_CM.keys())
 
 
