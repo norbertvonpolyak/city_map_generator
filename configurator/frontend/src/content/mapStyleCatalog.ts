@@ -5,7 +5,7 @@ export type BackendCityStyleId =
   | 'desert_sand'
   | 'ivory_bw'
   | 'urban_modern'
-  | 'minimal_sand'
+  | 'midnight_ember'
   | 'vintage_atlas'
   | 'pretty_buildings'
 
@@ -110,15 +110,15 @@ export const cityMapStyleRegistry: CityMapStyleDefinition[] = [
     radiusStep: 0.2,
   },
   {
-    id: 'minimal_sand',
+    id: 'midnight_ember',
     engine: 'block',
-    name: 'Minimal Sand',
-    description: 'Neutral block palette with light sand paper tones and subtle contrast.',
-    background: '#E9E4DA',
-    road: '#FFFFFF',
-    water: '#BFD1D6',
-    buildingColors: ['#F2EEE6', '#E1DBCF', '#CFC6B6', '#B8AEA0', '#9C9286', '#6E6A63', '#2C2C2C'],
-    thumbnailBackground: 'linear-gradient(160deg, #E9E4DA 0%, #e0d8ca 55%, #d5cab7 100%)',
+    name: 'Midnight Ember',
+    description: 'Deep urban contrast with ember accents and steel-blue block rhythm.',
+    background: '#F2EEE6',
+    road: '#D9D3C8',
+    water: '#0F4C5C',
+    buildingColors: ['#1E252B', '#25323A', '#31444D', '#45606D', '#6C8A99', '#F2A541', '#E4572E'],
+    thumbnailBackground: 'linear-gradient(160deg, #F2EEE6 0%, #e9e2d6 55%, #ddd3c4 100%)',
     maxRadiusKm: 4.5,
     radiusStep: 0.2,
   },
@@ -167,7 +167,7 @@ export const cityStyleFamilies: CityStyleFamilyDefinition[] = [
     name: 'District',
     description: 'Block engine variants',
     thumbnailClass: 'umc-style-thumb umc-style-thumb-district',
-    paletteIds: ['urban_modern', 'minimal_sand'],
+    paletteIds: ['urban_modern', 'midnight_ember'],
   },
   {
     id: 'architecture',

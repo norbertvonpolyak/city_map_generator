@@ -1148,7 +1148,7 @@ body {
   position: relative;
   width: 100%;
   height: 100%;
-  background: var(--umc-city-passepartout-color, #f6f3ee);
+  background: transparent;
 }
 
 .umc-city-fallback-map-shell {

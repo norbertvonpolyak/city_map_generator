@@ -38,6 +38,7 @@ def compose_layout_building(
     title: str,
     subtitle: str,
     palette_name: str,
+    filename_prefix: str,
     font_path: Optional[str] = None,
 ) -> LayoutResult:
 
@@ -46,8 +47,7 @@ def compose_layout_building(
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    timestamp = datetime.now().strftime("%y%m%d_%H%M%S")
-    output_pdf = output_dir / f"{palette_name}_{size_key}_{timestamp}.pdf"
+    output_pdf = output_dir / f"{filename_prefix}.pdf"
 
     c = canvas.Canvas(str(output_pdf), pagesize=(width_pt, height_pt))
 
@@ -104,6 +104,7 @@ def compose_layout_building(
 
     cormorant_path = project_root / "Fonts" / "CormorantGaramond-SemiBold.ttf"
     inter_path = project_root / "Fonts" / "Inter_18pt-ExtraLight.ttf"
+    centaurea_path = project_root / "Fonts" / "CentaureaDemo.ttf"
 
     pdfmetrics.registerFont (
         TTFont ("CormorantSemiBold", str (cormorant_path))
@@ -111,9 +112,16 @@ def compose_layout_building(
     pdfmetrics.registerFont (
         TTFont ("InterExtraLight", str (inter_path))
     )
+    
+    if centaurea_path.exists():
+        pdfmetrics.registerFont (
+            TTFont ("CentaureaDemoCustom", str (centaurea_path))
+        )
+        subtitle_font = "CentaureaDemoCustom"
+    else:
+        subtitle_font = "InterExtraLight"
 
     title_font = "CormorantSemiBold"
-    subtitle_font = "InterExtraLight"
 
     # Alsó margó teljes magassága
     bottom_margin_height = inner_y

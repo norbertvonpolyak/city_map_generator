@@ -8,6 +8,8 @@ from generator.engines.render_line import render_map_line
 
 from generator.specs import ProductSpec
 from generator.layouts.layout_utils import build_poster_layout, compose_poster_outputs, PosterTheme, PosterCompositionResult
+from generator.layouts.layout_block import compose_layout_block
+from generator.layouts.layout_building import compose_layout_building
 from generator.core.style_registry import STYLE_REGISTRY, EngineType
 from generator.styles import get_style_config, BlockStyleConfig, BuildingStyleConfig, LineStyleConfig
 from uuid import uuid4
@@ -149,6 +151,7 @@ def render_product(
                 subtitle_font_family="Helvetica",
                 body_font_family="Helvetica",
                 subtitle_letter_spacing_pt=0.5,
+                block_engine_layout=True,
             )
         elif isinstance(style_cfg, BuildingStyleConfig):
             theme = PosterTheme(
@@ -161,6 +164,7 @@ def render_product(
                 title_font_family="Monoton-Regular",
                 subtitle_font_family="Helvetica",
                 body_font_family="Helvetica",
+                block_engine_layout=True,
             )
         elif isinstance(style_cfg, LineStyleConfig):
             _bg = style_cfg.background.lstrip("#")
@@ -195,6 +199,9 @@ def render_product(
                 body_font_family="Helvetica",
             )
 
+        # Format coordinates for display
+        coordinates_str = f"{center_lat:.4f}°N  {center_lon:.4f}°E"
+        
         layout_result = compose_poster_outputs(
             layout=layout,
             map_svg_path=map_output_path,
@@ -202,10 +209,15 @@ def render_product(
             filename_prefix=filename_prefix,
             title=title,
             subtitle=subtitle,
-            coordinates=None,
+            coordinates=coordinates_str,
             custom_text=None,
             theme=theme,
             export_pdf=not preview_mode,
         )
+
+        # NOTE: Typography is now embedded in SVG for all engines
+        # (block, building, line). The SVG is the single source of truth.
+        # All outputs (PNG, PDF) are generated from SVG, ensuring consistency.
+        # Legacy separate PDF generation via compose_layout_block/compose_layout_building is disabled.
 
         return layout_result

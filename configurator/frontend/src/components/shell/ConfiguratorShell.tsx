@@ -268,7 +268,10 @@ export const ConfiguratorShell = ({
   const topMarginCm = sideMarginCm
   const isLineEngineStyle = selectedCityStyle.engine === 'line'
   const useMinimalCityFade = isCityModule && selectedCityFamily.id === 'minimal' && isLineEngineStyle
-  const cityPlaceholderImageSrc = useMinimalCityFade ? `/city-placeholders/${selectedCityStyle.id}_${selectedSizeOption.id}.png` : null
+  const useCityPlaceholder = isCityModule && !hasUserSelectedCityLocation
+  const cityPlaceholderImageSrc = useCityPlaceholder
+    ? `/city-placeholders/${selectedCityFamily.id}/${selectedCityStyle.id}_${selectedSizeOption.id}.png`
+    : null
   const styleBackground = selectedCityStyle.background.replace('#', '')
   const styleRed = Number.parseInt(styleBackground.slice(0, 2), 16)
   const styleGreen = Number.parseInt(styleBackground.slice(2, 4), 16)
@@ -279,7 +282,7 @@ export const ConfiguratorShell = ({
   const sideMarginRatio = sideMarginCm / selectedSizeOption.widthCm
   const topMarginRatio = topMarginCm / selectedSizeOption.heightCm
   const bottomBandRatio = bottomMarginCm / selectedSizeOption.heightCm
-  const fadeHeightRatio = useMinimalCityFade ? 0.40 : bottomBandRatio * 2
+  const fadeHeightRatio = useMinimalCityFade ? 0.40 : isLineEngineStyle ? bottomBandRatio * 2 : 0
   const visibleMapAspectRatio = (selectedSizeOption.widthCm - (sideMarginCm * 2)) / (selectedSizeOption.heightCm - topMarginCm - bottomMarginCm)
 
   const selectedStyleLabel = useMemo(() => {
@@ -1107,6 +1110,7 @@ export const ConfiguratorShell = ({
           passepartoutColor={isLineEngineStyle ? '#F6F3EE' : selectedCityStyle.background}
           fadeColor={lineFadeColor}
           useMinimalCityFade={useMinimalCityFade}
+          useCityPlaceholder={useCityPlaceholder}
           cityPlaceholderImageSrc={cityPlaceholderImageSrc}
         />
 
