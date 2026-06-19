@@ -53,6 +53,7 @@ class LineStyleConfig:
     road: str
     water: str
     road_style: RoadStyle
+    green: str = "#D9DEDE"
 
 
 # =============================================================================
@@ -198,9 +199,9 @@ STYLES = {
     ),
 
     "nordic_teal": LineStyleConfig(
-        background="#F7F5F0",
-        road="#1F2933",
-        water="#2A9D8F",
+        background="#EFF2F2",
+        road="#242B2F",
+        water="#78959D",
         road_style=RoadStyle(
             base_width=1.4,
             multipliers={
@@ -210,6 +211,7 @@ STYLES = {
                 "highway": 4.0,
             },
         ),
+        green="#D7DBDB",
     ),
 
     "blueprint": LineStyleConfig(

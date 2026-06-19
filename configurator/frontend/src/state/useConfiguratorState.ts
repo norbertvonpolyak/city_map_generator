@@ -22,6 +22,7 @@ export interface ConfiguratorState {
   cityPreviewSvg: string | null
   cityPreviewStatus: 'idle' | 'loading' | 'ready' | 'city-not-found' | 'failed'
   cityPreviewError: string | null
+  hasUserSelectedCityLocation: boolean
   printSizeId: string
   setActiveModule: (moduleKind: UMCModuleKind) => void
   setTitle: (title: string) => void
@@ -115,6 +116,7 @@ export const useConfiguratorState = (): ConfiguratorState => {
   const [cityPreviewSvg, setCityPreviewSvg] = useState<string | null>(null)
   const [cityPreviewStatus, setCityPreviewStatus] = useState<'idle' | 'loading' | 'ready' | 'city-not-found' | 'failed'>('idle')
   const [cityPreviewError, setCityPreviewError] = useState<string | null>(null)
+  const [hasUserSelectedCityLocation, setHasUserSelectedCityLocation] = useState<boolean>(false)
   const [printSizeId, setPrintSizeIdState] = useState<string>('50x70')
 
   const setPrintSizeId = (sizeId: string) => setPrintSizeIdState(sizeId)
@@ -128,6 +130,7 @@ export const useConfiguratorState = (): ConfiguratorState => {
     setCityPreviewSvg(null)
     setCityPreviewStatus('idle')
     setCityPreviewError(null)
+    setHasUserSelectedCityLocation(false)
   }
 
   const setTitle = (title: string) => {
@@ -143,6 +146,7 @@ export const useConfiguratorState = (): ConfiguratorState => {
       setCityPreviewSvg(null)
       setCityPreviewStatus('idle')
       setCityPreviewError(null)
+      setHasUserSelectedCityLocation(false)
     }
   }
 
@@ -160,6 +164,7 @@ export const useConfiguratorState = (): ConfiguratorState => {
       setCityPreviewSvg(null)
       setCityPreviewStatus('idle')
       setCityPreviewError(null)
+      setHasUserSelectedCityLocation(true)
     }
   }
 
@@ -188,6 +193,7 @@ export const useConfiguratorState = (): ConfiguratorState => {
       setCityPreviewSvg(null)
       setCityPreviewStatus('idle')
       setCityPreviewError(null)
+      setHasUserSelectedCityLocation(true)
     }
   }
 
@@ -346,6 +352,7 @@ export const useConfiguratorState = (): ConfiguratorState => {
       cityPreviewSvg,
       cityPreviewStatus,
       cityPreviewError,
+      hasUserSelectedCityLocation,
       printSizeId,
       setActiveModule,
       setTitle,

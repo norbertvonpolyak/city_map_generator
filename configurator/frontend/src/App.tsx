@@ -23,6 +23,7 @@ function App() {
     cityPreviewSvg,
     cityPreviewStatus,
     cityPreviewError,
+    hasUserSelectedCityLocation,
     setPlacementType,
     setPreviewViewport,
     resetPreviewViewport,
@@ -57,6 +58,7 @@ function App() {
       cityPreviewSvg={cityPreviewSvg}
       cityPreviewStatus={cityPreviewStatus}
       cityPreviewError={cityPreviewError}
+      hasUserSelectedCityLocation={hasUserSelectedCityLocation}
       onPlacementTypeChange={setPlacementType}
       onPreviewViewportChange={setPreviewViewport}
       onPreviewViewportReset={resetPreviewViewport}

@@ -177,23 +177,57 @@ Enables:
 
 # 🖨️ Two-Step Rendering Architecture
 
-## 1️⃣ Map Layer (Matplotlib → PNG/SVG)
+## 1️⃣ Map Layer (Engine Render → Temporary SVG)
 
 - Deterministic seed  
 - DPI-aware rendering  
 - Full-bleed axes  
-- Optional SVG export  
+- Engine-specific map layer generation  
+- Temporary SVG layer used as composition input  
 
-## 2️⃣ Print Composition (ReportLab → PDF)
+## 2️⃣ Poster Composition (SVG Layout Stage)
 
-- Fixed centimeter-based margins  
-- 1 cm side + top margin  
-- 4 cm bottom strip  
-- Right-aligned title  
-- Subtitle tracking  
-- Logo support  
-- Timestamped filename  
-- Size identifier in filename  
+- Size-driven poster layout  
+- Engine-specific passepartout and typography rules  
+- Final composed poster SVG for inspection and frontend consistency  
+- Fade / bottom band / decorative subtitle lines handled at layout level  
+
+## 3️⃣ Final Poster Outputs
+
+- The engine first renders a temporary map-only SVG layer.  
+- That temporary SVG is then composed into the final poster SVG.  
+- Final PNG and PDF are generated from the composed poster stage, never from the raw map layer directly.  
+- The temporary map SVG is written to a transient directory and is no longer saved into `output/`.  
+
+### Line Engine Export Note
+
+For Line Engine posters, the browser-rendered final SVG remains the visual source of truth for layout and styling, but PNG/PDF export uses a dedicated stable print path.
+
+Reason:
+
+- In this workspace environment, Cairo runtime libraries may be unavailable.  
+- Under those conditions, generic SVG→PDF/PNG conversion backends can shift typography, fade overlays, or nested SVG placement.  
+
+Current solution:
+
+- Final poster SVG is still produced for inspection and frontend consistency.  
+- Line Engine PNG/PDF exports are composed through a dedicated ReportLab-based print path that reproduces the same poster layout directly for stable output.  
+- PNG is rasterized from that dedicated PDF composition path, so PDF and PNG stay in sync with each other.  
+- This avoids intermediate converter regressions while keeping the final SVG available as the canonical visual reference.  
+
+### Line Engine Fade Behavior (Current)
+
+- Fade is applied to the map area only, not to the passepartout.  
+- Passepartout remains visually untouched (top, sides, and bottom strip stay solid).  
+- Fade geometry and opacity profile are identical across SVG/PDF/PNG outputs.  
+- For dark Line Engine minimal palettes (Minimal Night, Blueprint), fade color is black while preserving the same fade geometry and opacity progression.  
+
+### Configurator Placeholder Behavior (Current)
+
+- For Line Engine minimal styles, static placeholder PNG assets are used before the customer selects a custom location.  
+- Placeholder selection is palette+size specific (`{palette}_{size}.png`) and sourced from `configurator/frontend/public/city-placeholders/`.  
+- Placeholder PNG is rendered as a full poster asset (no additional frontend passepartout/fade/text overlay is applied on top).  
+- After the customer selects a custom location, configurator preview switches from placeholder mode to the live map module and no longer renders placeholder PNG.  
 
 ---
 
