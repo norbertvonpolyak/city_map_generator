@@ -1,6 +1,8 @@
+import type { BackendCityStyleId } from '../content/mapStyleCatalog'
+
 export interface CityPreviewRequest {
   city: string
-  style: 'minimal'
+  style: BackendCityStyleId
   latitude?: number | null
   longitude?: number | null
   sizeKey: string

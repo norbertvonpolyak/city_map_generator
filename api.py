@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 class CityPreviewRequest(BaseModel):
     city: str
-    style: str = "minimal"
+    style: str = "nordic_teal"
     sizeKey: str = "50x70"
     extentM: int = 1800
 

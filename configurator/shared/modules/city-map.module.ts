@@ -13,13 +13,13 @@ export const cityMapDefaults: CityPosterConfig = {
     regionHint: 'city-center',
   },
   template: {
-    templateId: 'city-signature',
+    templateId: 'nordic_teal',
     ratio: '3:4',
     orientation: 'portrait',
     sizePreset: '50x70',
   },
   style: {
-    paletteId: 'linen',
+    paletteId: 'nordic_teal',
     tone: 'classic',
     lineWeight: 'balanced',
     textureEnabled: true,

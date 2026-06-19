@@ -196,6 +196,66 @@ STYLES = {
             },
         ),
     ),
+
+    "nordic_teal": LineStyleConfig(
+        background="#F7F5F0",
+        road="#1F2933",
+        water="#2A9D8F",
+        road_style=RoadStyle(
+            base_width=1.4,
+            multipliers={
+                "minor": 0.35,
+                "local": 0.7,
+                "arterial": 2.2,
+                "highway": 4.0,
+            },
+        ),
+    ),
+
+    "blueprint": LineStyleConfig(
+        background="#0D1B2A",
+        road="#E0E1DD",
+        water="#415A77",
+        road_style=RoadStyle(
+            base_width=1.4,
+            multipliers={
+                "minor": 0.35,
+                "local": 0.7,
+                "arterial": 2.2,
+                "highway": 4.0,
+            },
+        ),
+    ),
+
+    "desert_sand": LineStyleConfig(
+        background="#F2E9DC",
+        road="#3E3A36",
+        water="#6B8FA3",
+        road_style=RoadStyle(
+            base_width=1.4,
+            multipliers={
+                "minor": 0.35,
+                "local": 0.7,
+                "arterial": 2.2,
+                "highway": 4.0,
+            },
+        ),
+    ),
+
+    "ivory_bw": LineStyleConfig(
+        background="#FAF8F3",
+        road="#161616",
+        water="#D9D9D9",
+        road_style=RoadStyle(
+            base_width=1.4,
+            multipliers={
+                "minor": 0.35,
+                "local": 0.7,
+                "arterial": 2.2,
+                "highway": 4.0,
+            },
+        ),
+    ),
 }
 
 

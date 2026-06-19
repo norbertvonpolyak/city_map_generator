@@ -8,6 +8,7 @@ import type { UMCPosterConfig } from '@umc-shared/types'
 import type { UMCModuleKind } from '@umc-shared/types'
 import type { UMCPosterTypographyStyle } from '@umc-shared/types'
 import { huObjectTypeLabels, huUiText } from '../content/hu'
+import type { BackendCityStyleId } from '../content/mapStyleCatalog'
 import { generateCityPreview as fetchCityPreview } from '../services/cityPreviewApi'
 import type { SelectedLocation } from '../services/locationSearch'
 
@@ -36,7 +37,7 @@ export interface ConfiguratorState {
   setPlacementType: (type: UMCPreviewObjectType) => void
   setPreviewViewport: (viewport: UMCPreviewViewportState) => void
   resetPreviewViewport: () => void
-  generateCityPreview: () => Promise<void>
+  generateCityPreview: (params: { styleId: BackendCityStyleId; extentM: number }) => Promise<void>
   addObjectAtPoint: (type: UMCPreviewObjectType, point: UMCPreviewPoint) => void
   moveObject: (id: string, point: UMCPreviewPoint) => void
   selectObject: (id: string | null) => void
@@ -259,7 +260,7 @@ export const useConfiguratorState = (): ConfiguratorState => {
     setPreviewViewportState(defaultViewport)
   }
 
-  const generateCityPreview = async () => {
+  const generateCityPreview = async ({ styleId, extentM }: { styleId: BackendCityStyleId; extentM: number }) => {
     if (activeModule !== 'city-map') {
       return
     }
@@ -278,11 +279,11 @@ export const useConfiguratorState = (): ConfiguratorState => {
     try {
       const assets = await fetchCityPreview({
         city,
-        style: 'minimal',
+        style: styleId,
         latitude: activeConfig.location.latitude,
         longitude: activeConfig.location.longitude,
         sizeKey: printSizeId,
-        extentM: Math.round(radiusKm * 1000),
+        extentM,
       })
       setCityPreviewSvg(assets.svg)
       setCityPreviewStatus('ready')

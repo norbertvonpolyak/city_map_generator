@@ -9,6 +9,7 @@ import re
 
 import osmnx as ox
 
+from generator.core.style_registry import STYLE_REGISTRY
 from generator.core.render_dispatcher import render_product
 from generator.specs import ProductLine, spec_from_size_key, validate_size_key_for_product_line
 
@@ -22,11 +23,17 @@ logger = logging.getLogger(__name__)
 
 def _normalize_style(style: str) -> str:
     normalized = style.strip().lower()
+    aliases = {
+        "minimal": "nordic_teal",
+        "minimal_night": "bw_minimal",
+    }
 
-    if normalized in {"minimal", "minimal_sand"}:
-        return "minimal_sand"
+    mapped = aliases.get(normalized, normalized)
+    if mapped in STYLE_REGISTRY:
+        return mapped
 
-    raise ValueError("Unsupported city preview style. Only 'minimal' is available.")
+    supported = ", ".join(sorted(STYLE_REGISTRY.keys()))
+    raise ValueError(f"Unsupported city preview style '{style}'. Supported styles: {supported}")
 
 
 @lru_cache(maxsize=256)
@@ -55,7 +62,7 @@ class CityPreviewResult:
 def generate_city_preview_svg(
     *,
     city: str,
-    style: str = "minimal",
+    style: str = "nordic_teal",
     size_key: str = PREVIEW_SIZE_KEY,
     extent_m: int = PREVIEW_EXTENT_M,
 ) -> CityPreviewResult:

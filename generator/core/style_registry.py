@@ -57,4 +57,20 @@ STYLE_REGISTRY = {
     "bw_minimal": StyleDefinition(
         engine=EngineType.LINE,
     ),
+
+    "nordic_teal": StyleDefinition(
+        engine=EngineType.LINE,
+    ),
+
+    "blueprint": StyleDefinition(
+        engine=EngineType.LINE,
+    ),
+
+    "desert_sand": StyleDefinition(
+        engine=EngineType.LINE,
+    ),
+
+    "ivory_bw": StyleDefinition(
+        engine=EngineType.LINE,
+    ),
 }
