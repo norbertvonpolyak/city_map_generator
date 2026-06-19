@@ -39,9 +39,25 @@ def _classify_road(hw: str) -> str:
         return "highway"
     if hw in {"primary", "secondary", "tertiary"}:
         return "arterial"
-    if hw in {"residential", "living_street"}:
+    if hw in {"residential", "unclassified", "living_street"}:
         return "local"
     return "minor"
+
+
+def _prepare_polygon_layer(raw_layer: gpd.GeoDataFrame | None, target_crs, clip_rect) -> gpd.GeoDataFrame:
+    if raw_layer is None or len(raw_layer) == 0:
+        return gpd.GeoDataFrame(geometry=[], crs=target_crs)
+
+    layer = raw_layer[(~raw_layer.geometry.isna()) & (~raw_layer.geometry.is_empty)]
+    if len(layer) == 0:
+        return gpd.GeoDataFrame(geometry=[], crs=target_crs)
+
+    layer_p = layer.to_crs(target_crs)
+    layer_p = layer_p[layer_p.geom_type.isin(["Polygon", "MultiPolygon"])]
+    if len(layer_p) == 0:
+        return gpd.GeoDataFrame(geometry=[], crs=target_crs)
+
+    return gpd.clip(layer_p, gpd.GeoSeries([clip_rect], crs=target_crs))
 
 
 # ---------------------------------------------------------------------------
@@ -135,6 +151,46 @@ def render_map_line(
     edges_p = gpd.clip(edges_p, gpd.GeoSeries([clip_rect], crs=edges_p.crs))
     edges_p = edges_p[~edges_p.is_empty]
 
+    clip_gdf = gpd.GeoDataFrame(geometry=[clip_rect], crs=edges_p.crs)
+    clip_wgs = clip_gdf.to_crs("EPSG:4326").geometry.iloc[0]
+
+    try:
+        water_raw = ox.features_from_polygon(
+            clip_wgs,
+            tags={
+                "natural": ["water", "bay", "strait"],
+                "water": True,
+                "waterway": ["riverbank", "canal"],
+                "landuse": ["basin", "reservoir"],
+            },
+        )
+    except Exception:
+        water_raw = ox.features_from_polygon(
+            clip_wgs,
+            tags={
+                "natural": "water",
+                "waterway": "riverbank",
+            },
+        )
+
+    try:
+        green_raw = ox.features_from_polygon(
+            clip_wgs,
+            tags={
+                "leisure": ["park", "garden", "nature_reserve", "recreation_ground", "village_green"],
+                "landuse": ["forest", "grass", "meadow", "recreation_ground", "village_green"],
+                "natural": ["wood", "grassland", "scrub", "heath"],
+            },
+        )
+    except Exception:
+        green_raw = ox.features_from_polygon(
+            clip_wgs,
+            tags={"leisure": "park"},
+        )
+
+    water_p = _prepare_polygon_layer(water_raw, edges_p.crs, clip_rect)
+    green_p = _prepare_polygon_layer(green_raw, edges_p.crs, clip_rect)
+
     if "highway" in edges_p.columns:
         edges_p["road_class"] = edges_p["highway"].apply(_classify_road)
     else:
@@ -148,11 +204,24 @@ def render_map_line(
     fig.patch.set_facecolor(style_cfg.background)
     ax.set_facecolor(style_cfg.background)
 
+    if len(water_p) > 0:
+        water_p.plot(
+            ax=ax,
+            color=style_cfg.water,
+            edgecolor="none",
+            zorder=1,
+        )
+
+    if len(green_p) > 0:
+        green_p.plot(
+            ax=ax,
+            color=style_cfg.green,
+            edgecolor="none",
+            zorder=2,
+        )
+
     road_width_base = style_cfg.road_style.base_width
     multipliers = style_cfg.road_style.multipliers
-
-    if extent_m > 2000:
-        road_width_base *= (2000 / extent_m)
 
     for cls, mult in multipliers.items():
         subset = edges_p[edges_p["road_class"] == cls]
@@ -161,7 +230,7 @@ def render_map_line(
                 ax=ax,
                 color=style_cfg.road,
                 linewidth=road_width_base * mult,
-                zorder=10,
+                zorder=12,
             )
 
     ax.set_xlim(minx, maxx)

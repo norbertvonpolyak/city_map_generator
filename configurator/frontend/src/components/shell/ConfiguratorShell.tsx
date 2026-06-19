@@ -51,6 +51,7 @@ interface ConfiguratorShellProps {
   cityPreviewSvg: string | null
   cityPreviewStatus: 'idle' | 'loading' | 'ready' | 'city-not-found' | 'failed'
   cityPreviewError: string | null
+  hasUserSelectedCityLocation: boolean
   onPlacementTypeChange: (type: UMCPreviewObjectType) => void
   onPreviewViewportChange: (viewport: UMCPreviewViewportState) => void
   onPreviewViewportReset: () => void
@@ -184,6 +185,7 @@ export const ConfiguratorShell = ({
   cityPreviewSvg,
   cityPreviewStatus,
   cityPreviewError,
+  hasUserSelectedCityLocation,
   onPlacementTypeChange,
   onPreviewViewportChange,
   onPreviewViewportReset,
@@ -264,10 +266,20 @@ export const ConfiguratorShell = ({
   const shortSideCm = Math.min(selectedSizeOption.widthCm, selectedSizeOption.heightCm)
   const sideMarginCm = shortSideCm * 0.04
   const topMarginCm = sideMarginCm
-  const bottomMarginCm = selectedSizeOption.heightCm * 0.10
+  const isLineEngineStyle = selectedCityStyle.engine === 'line'
+  const useMinimalCityFade = isCityModule && selectedCityFamily.id === 'minimal' && isLineEngineStyle
+  const cityPlaceholderImageSrc = useMinimalCityFade ? `/city-placeholders/${selectedCityStyle.id}_${selectedSizeOption.id}.png` : null
+  const styleBackground = selectedCityStyle.background.replace('#', '')
+  const styleRed = Number.parseInt(styleBackground.slice(0, 2), 16)
+  const styleGreen = Number.parseInt(styleBackground.slice(2, 4), 16)
+  const styleBlue = Number.parseInt(styleBackground.slice(4, 6), 16)
+  const styleLuminance = ((0.2126 * styleRed) + (0.7152 * styleGreen) + (0.0722 * styleBlue)) / 255
+  const lineFadeColor = useMinimalCityFade && styleLuminance < 0.4 ? '#000000' : '#F6F3EE'
+  const bottomMarginCm = isLineEngineStyle ? sideMarginCm : selectedSizeOption.heightCm * 0.10
   const sideMarginRatio = sideMarginCm / selectedSizeOption.widthCm
   const topMarginRatio = topMarginCm / selectedSizeOption.heightCm
   const bottomBandRatio = bottomMarginCm / selectedSizeOption.heightCm
+  const fadeHeightRatio = useMinimalCityFade ? 0.40 : bottomBandRatio * 2
   const visibleMapAspectRatio = (selectedSizeOption.widthCm - (sideMarginCm * 2)) / (selectedSizeOption.heightCm - topMarginCm - bottomMarginCm)
 
   const selectedStyleLabel = useMemo(() => {
@@ -1073,6 +1085,7 @@ export const ConfiguratorShell = ({
           objects={previewObjects}
           cityPreviewSvg={cityPreviewSvg}
           cityPreviewStatus={cityPreviewStatus}
+          hasUserSelectedCityLocation={hasUserSelectedCityLocation}
           locationLatitude={activeConfig.location.latitude}
           locationLongitude={activeConfig.location.longitude}
           radiusKm={radiusKm}
@@ -1090,7 +1103,11 @@ export const ConfiguratorShell = ({
           sideMarginRatio={sideMarginRatio}
           topMarginRatio={topMarginRatio}
           bottomBandRatio={bottomBandRatio}
-          passepartoutColor={selectedCityStyle.background}
+          fadeHeightRatio={fadeHeightRatio}
+          passepartoutColor={isLineEngineStyle ? '#F6F3EE' : selectedCityStyle.background}
+          fadeColor={lineFadeColor}
+          useMinimalCityFade={useMinimalCityFade}
+          cityPlaceholderImageSrc={cityPlaceholderImageSrc}
         />
 
         <section className="umc-product-bar">

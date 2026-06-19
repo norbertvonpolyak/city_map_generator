@@ -31,6 +31,7 @@ interface InteractiveCircularViewportProps {
   objects: UMCPreviewObject[]
   cityPreviewSvg: string | null
   cityPreviewStatus: 'idle' | 'loading' | 'ready' | 'city-not-found' | 'failed'
+  hasUserSelectedCityLocation: boolean
   locationLatitude: number | null
   locationLongitude: number | null
   radiusKm: number
@@ -48,7 +49,11 @@ interface InteractiveCircularViewportProps {
   sideMarginRatio: number
   topMarginRatio: number
   bottomBandRatio: number
+  fadeHeightRatio: number
   passepartoutColor: string
+  fadeColor: string
+  useMinimalCityFade: boolean
+  cityPlaceholderImageSrc: string | null
 }
 
 interface TextAppearanceSettings {
@@ -118,6 +123,7 @@ export const InteractiveCircularViewport = ({
   objects,
   cityPreviewSvg,
   cityPreviewStatus,
+  hasUserSelectedCityLocation,
   locationLatitude,
   locationLongitude,
   radiusKm,
@@ -135,7 +141,11 @@ export const InteractiveCircularViewport = ({
   sideMarginRatio,
   topMarginRatio,
   bottomBandRatio,
+  fadeHeightRatio,
   passepartoutColor,
+  fadeColor,
+  useMinimalCityFade,
+  cityPlaceholderImageSrc,
 }: InteractiveCircularViewportProps) => {
   const canvasRef = useRef<HTMLDivElement | null>(null)
   const [dragState, setDragState] = useState<DragState | null>(null)
@@ -288,16 +298,30 @@ export const InteractiveCircularViewport = ({
   }, [customTextAppearance])
 
   const cityHasComposedPoster = moduleKind === 'city-map' && !!cityPreviewSvg
+  const shouldShowCityPlaceholder = useMinimalCityFade && !cityHasComposedPoster && !hasUserSelectedCityLocation && !!cityPlaceholderImageSrc
+  const shouldRenderFullPosterAsset = cityHasComposedPoster || shouldShowCityPlaceholder
   const cityFallbackLayoutStyle = useMemo(() => {
     return {
       '--umc-city-side-margin': `${sideMarginRatio * 100}%`,
       '--umc-city-top-margin': `${topMarginRatio * 100}%`,
       '--umc-city-bottom-band': `${bottomBandRatio * 100}%`,
+      '--umc-city-fade-height': `${fadeHeightRatio * 100}%`,
       '--umc-city-passepartout-color': passepartoutColor,
+      '--umc-city-fade-color': fadeColor,
     } as CSSProperties
-  }, [bottomBandRatio, passepartoutColor, sideMarginRatio, topMarginRatio])
+  }, [bottomBandRatio, fadeColor, fadeHeightRatio, passepartoutColor, sideMarginRatio, topMarginRatio])
 
-  const fallbackCanvas = moduleKind === 'city-map'
+  const fallbackCanvas = shouldShowCityPlaceholder
+    ? (
+        <div className="umc-city-placeholder-sheet">
+          <img
+            src={cityPlaceholderImageSrc ?? undefined}
+            alt={styleSummary}
+            className="umc-city-placeholder-image"
+          />
+        </div>
+      )
+    : moduleKind === 'city-map'
     ? (
         <div className="umc-city-fallback-sheet" style={cityFallbackLayoutStyle}>
           <div className="umc-city-fallback-map-shell">
@@ -338,7 +362,7 @@ export const InteractiveCircularViewport = ({
             </div>
           </div>
 
-          <div className="umc-city-fallback-bottom-band">
+          <div className={useMinimalCityFade ? 'umc-city-fallback-bottom-band umc-city-fallback-bottom-band-minimal' : 'umc-city-fallback-bottom-band'}>
             {typographyStyle === 'urban' ? (
               <div className="umc-poster-typo umc-poster-typo-urban" style={posterTypeStyle}>
                 <div className="umc-poster-urban-accent" aria-hidden="true" />
@@ -421,7 +445,7 @@ export const InteractiveCircularViewport = ({
       <div className="umc-stage-wrap">
         <div className={frameClass}>
           <article
-            className={moduleKind === 'city-map' ? 'umc-poster-sheet umc-poster-sheet-rendered' : 'umc-poster-sheet'}
+            className={shouldRenderFullPosterAsset ? 'umc-poster-sheet umc-poster-sheet-rendered' : 'umc-poster-sheet'}
             style={{ aspectRatio: String(posterAspectRatio) }}
           >
             {cityHasComposedPoster ? (

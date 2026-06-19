@@ -1132,6 +1132,12 @@ body {
   display: block;
 }
 
+.umc-city-placeholder-sheet {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
 .umc-city-poster-sheet > svg {
   width: 100%;
   height: 100%;
@@ -1163,11 +1169,42 @@ body {
   left: 0;
   right: 0;
   bottom: 0;
-  height: var(--umc-city-bottom-band);
+  height: var(--umc-city-fade-height, calc(var(--umc-city-bottom-band) * 2));
   display: grid;
-  align-items: center;
+  align-items: end;
+  padding-bottom: calc(var(--umc-city-bottom-band) * 0.35);
   padding-inline: var(--umc-city-side-margin);
-  background: var(--umc-city-passepartout-color, #f6f3ee);
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    var(--umc-city-fade-color, var(--umc-city-passepartout-color, #f6f3ee)) 50%
+  );
+  z-index: 2;
+}
+
+.umc-city-fallback-bottom-band-minimal {
+  bottom: var(--umc-city-bottom-band);
+  background: none;
+}
+
+.umc-city-fallback-bottom-band-minimal::before {
+  content: '';
+  position: absolute;
+  left: var(--umc-city-side-margin);
+  right: var(--umc-city-side-margin);
+  top: 0;
+  bottom: 0;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    var(--umc-city-fade-color, var(--umc-city-passepartout-color, #f6f3ee)) 50%
+  );
+  pointer-events: none;
+}
+
+.umc-city-fallback-bottom-band-minimal > * {
+  position: relative;
+  z-index: 1;
 }
 
 .umc-live-map {
@@ -1178,6 +1215,13 @@ body {
 .umc-live-map-canvas {
   width: 100%;
   height: 100%;
+}
+
+.umc-city-placeholder-image {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
 }
 
 .umc-live-map .leaflet-container {
