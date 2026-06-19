@@ -85,6 +85,30 @@ STYLES = {
         ),
     ),
 
+    "midnight_ember": BlockStyleConfig(
+        background="#F2EEE6",
+        block_colors=[
+            "#1E252B",  # charcoal
+            "#25323A",  # dark slate
+            "#31444D",  # blue grey
+            "#45606D",  # steel blue
+            "#6C8A99",  # light steel
+            "#F2A541",  # amber
+            "#E4572E",  # ember red
+        ],
+        road="#D9D3C8",
+        water="#0F4C5C",
+        road_style=RoadStyle(
+            base_width=3.3,
+            multipliers={
+                "highway": 2.4,
+                "arterial": 1.8,
+                "local": 1.0,
+                "minor": 0.6,
+            },
+        ),
+    ),
+
     "minimal_sand": BlockStyleConfig(
         background="#E9E4DA",
         block_colors=[

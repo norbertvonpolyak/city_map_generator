@@ -34,6 +34,10 @@ STYLE_REGISTRY = {
         engine=EngineType.BLOCK,
     ),
 
+    "midnight_ember": StyleDefinition(
+        engine=EngineType.BLOCK,
+    ),
+
     "minimal_sand": StyleDefinition(
         engine=EngineType.BLOCK,
     ),

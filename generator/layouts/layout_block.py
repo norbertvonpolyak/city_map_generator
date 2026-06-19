@@ -38,14 +38,14 @@ def compose_layout_block(
     title: str,
     subtitle: str,
     palette_name: str,
+    filename_prefix: str,
     font_path: Optional[str] = None,
 ) -> LayoutResult:
 
     width_pt = spec.width_cm * cm
     height_pt = spec.height_cm * cm
 
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    output_pdf = output_dir / f"{palette_name}_{size_key}_{timestamp}.pdf"
+    output_pdf = output_dir / f"{filename_prefix}.pdf"
 
     c = canvas.Canvas(str(output_pdf), pagesize=(width_pt, height_pt))
 
@@ -66,7 +66,17 @@ def compose_layout_block(
     else:
         title_font_name = "Helvetica"
 
-    subtitle_font_name = "Helvetica-Bold"
+    # Register CentaureaDemo for subtitle and coordinates
+    centaurea_path = project_root / "Fonts" / "CentaureaDemo.ttf"
+    if centaurea_path.exists():
+        pdfmetrics.registerFont(
+            TTFont("CentaureaDemoCustom", str(centaurea_path))
+        )
+        subtitle_font_name = "CentaureaDemoCustom"
+        coordinates_font_name = "CentaureaDemoCustom"
+    else:
+        subtitle_font_name = "Helvetica-Bold"
+        coordinates_font_name = "Helvetica"
 
     # ---------------------------------------------------------------------
     # FRAME (1cm sides/top, 4cm bottom)
@@ -130,74 +140,11 @@ def compose_layout_block(
 
     renderPDF.draw (drawing, c, offset_x, offset_y)
 
-    # ---------------------------------------------------------------------
-    # TITLE + SUBTITLE
-    # ---------------------------------------------------------------------
-
-    strip_height = 4 * cm
-    right_inner_edge = width_pt - right_margin
-
-    title_font_size = 48
-    subtitle_font_size = 17
-    spacing = subtitle_font_size * 0.3
-
-    block_height = title_font_size + spacing + subtitle_font_size
-    strip_center_y = strip_height / 2
-    block_bottom_y = strip_center_y - (block_height / 2)
-
-    subtitle_y = block_bottom_y
-    title_y = subtitle_y + subtitle_font_size + spacing
-
-    title_width = pdfmetrics.stringWidth(
-        title, title_font_name, title_font_size
-    )
-
-    tracking_value = 1.5
-
-    raw_sub_width = pdfmetrics.stringWidth(
-        subtitle.upper(), subtitle_font_name, subtitle_font_size
-    )
-
-    subtitle_width = raw_sub_width + (
-        len(subtitle) - 1
-    ) * tracking_value
-
-    title_x = right_inner_edge - title_width
-    subtitle_x = right_inner_edge - subtitle_width
-
-    # Title
-    c.setFillColor(colors.HexColor("#4E4E4E"))
-    c.setFont(title_font_name, title_font_size)
-    c.drawString(title_x, title_y, title)
-
-    # Subtitle with tracking
-    def draw_tracked_string(
-        canvas,
-        text,
-        x,
-        y,
-        font_name,
-        font_size,
-        tracking=1.5,
-    ):
-        canvas.setFont(font_name, font_size)
-        cursor_x = x
-        for char in text:
-            canvas.drawString(cursor_x, y, char)
-            char_width = pdfmetrics.stringWidth(
-                char, font_name, font_size
-            )
-            cursor_x += char_width + tracking
-
-    draw_tracked_string(
-        c,
-        subtitle.upper(),
-        subtitle_x,
-        subtitle_y,
-        subtitle_font_name,
-        subtitle_font_size,
-        tracking=tracking_value,
-    )
+    # TITLE + SUBTITLE + COORDINATES (RENDERED IN SVG NOW)
+    # =====================================================
+    # Typography is now embedded in the SVG (for consistency with PNG output).
+    # This PDF rendering is disabled to avoid double-rendering conflicts.
+    # SVG is the single source of truth for all outputs.
 
     # ---------------------------------------------------------------------
     # FINALIZE

@@ -104,6 +104,7 @@ class PosterTheme:
     text_padding_cm: float = 0.18
     bottom_fade: bool = False
     center_title: bool = False
+    block_engine_layout: bool = False
 
 
 @dataclass(frozen=True)
@@ -429,6 +430,114 @@ def _append_title_typography(
     )
 
 
+def _append_block_engine_typography(
+    svg_root: ET.Element,
+    *,
+    layout: PosterLayout,
+    title: str,
+    subtitle: str,
+    coordinates: Optional[str],
+    theme: PosterTheme,
+) -> None:
+    """Append typography for block and building engines (bottom-right aligned).
+    
+    Args:
+        svg_root: SVG root element to append to
+        layout: Poster layout with dimensions
+        title: Main title (city name)
+        subtitle: Unused for block engine typography
+        coordinates: Optional coordinates string rendered below the city name
+        theme: Theme with colors and font settings
+    """
+    if not title and not coordinates:
+        return
+
+    typo = ET.SubElement(svg_root, f"{{{SVG_NS}}}g", {"id": "block-engine-typography"})
+    
+    # Positioning in the bottom band (right-aligned)
+    band_height_cm = layout.bottom_margin_cm
+    right_edge_cm = layout.width_cm - layout.right_margin_cm
+    right_padding_cm = 0.3
+    
+    title_font_path = _resolve_monoton_font_path()
+    subtitle_font_path = None
+    montserrat_medium_path = None
+    try:
+        centaurea_path = Path(__file__).resolve().parents[2] / "Fonts" / "CentaureaDemo.ttf"
+        if centaurea_path.exists():
+            subtitle_font_path = centaurea_path
+        mm_path = Path(__file__).resolve().parents[2] / "Fonts" / "Montserrat-Medium.ttf"
+        if mm_path.exists():
+            montserrat_medium_path = mm_path
+    except:
+        pass
+    
+    # Scale the two-line typography block to the upper 50% of the bottom band.
+    # Keep only the title/coordinates size ratio fixed; derive actual sizes from the
+    # available vertical space so the layout stays consistent across all block sizes.
+    base_title_ratio = 0.2925
+    base_coord_ratio = 0.1265 * 0.70 * 0.80
+    base_gap_ratio = base_coord_ratio * 0.40
+    upper_half_height_cm = band_height_cm * 0.50
+    top_inset_cm = band_height_cm * 0.07
+
+    if coordinates:
+        total_ratio = base_title_ratio + base_gap_ratio + base_coord_ratio
+        scale_factor = upper_half_height_cm / (band_height_cm * total_ratio)
+        title_height_cm = band_height_cm * base_title_ratio * scale_factor
+        coord_height_cm = band_height_cm * base_coord_ratio * scale_factor
+        edge_gap_title_coord_cm = band_height_cm * base_gap_ratio * scale_factor
+
+        stack_top_cm = band_height_cm - top_inset_cm
+        title_cy_from_bottom = stack_top_cm - (title_height_cm / 2)
+        coord_cy_from_bottom = (
+            title_cy_from_bottom
+            - (title_height_cm / 2)
+            - edge_gap_title_coord_cm
+            - (coord_height_cm / 2)
+        )
+    else:
+        title_height_cm = upper_half_height_cm
+        coord_height_cm = 0.0
+        title_cy_from_bottom = (band_height_cm - top_inset_cm) - (title_height_cm / 2)
+        coord_cy_from_bottom = 0.0
+    
+    # Draw title
+    if title and title_font_path:
+        title_path = TextPath((0, 0), title, prop=FontProperties(fname=str(title_font_path)), size=1)
+        bbox = title_path.get_extents()
+        if bbox.height > 0:
+            scale = title_height_cm / bbox.height
+            title_width_cm = bbox.width * scale
+            offset_x_cm = (right_edge_cm - right_padding_cm) - title_width_cm - (bbox.x0 * scale)
+            bottom_y_cm = title_cy_from_bottom - (bbox.height * scale / 2) - (bbox.y0 * scale)
+            path_d = _text_path_to_svg_d(title_path, scale=scale, offset_x_cm=offset_x_cm, offset_y_cm=bottom_y_cm, layout=layout)
+            ET.SubElement(typo, f"{{{SVG_NS}}}path", {
+                "d": path_d,
+                "fill": theme.title_color,
+                "stroke": "none",
+                "id": "block-title-text",
+            })
+    
+    # Draw coordinates directly below the title (Montserrat-Medium, subtitle-sized)
+    coord_font_path = montserrat_medium_path or subtitle_font_path
+    if coordinates and coord_font_path:
+        coord_path = TextPath((0, 0), coordinates, prop=FontProperties(fname=str(coord_font_path)), size=1)
+        c_bbox = coord_path.get_extents()
+        if c_bbox.height > 0:
+            c_scale = coord_height_cm / c_bbox.height
+            coord_width_cm = c_bbox.width * c_scale
+            c_offset_x = (right_edge_cm - right_padding_cm) - coord_width_cm - (c_bbox.x0 * c_scale)
+            c_bottom_y = coord_cy_from_bottom - (c_bbox.height * c_scale / 2) - (c_bbox.y0 * c_scale)
+            path_d = _text_path_to_svg_d(coord_path, scale=c_scale, offset_x_cm=c_offset_x, offset_y_cm=c_bottom_y, layout=layout)
+            ET.SubElement(typo, f"{{{SVG_NS}}}path", {
+                "d": path_d,
+                "fill": theme.coordinates_color,
+                "stroke": "none",
+                "id": "block-coordinates-text",
+            })
+
+
 def _append_line_engine_typography(
     svg_root: ET.Element,
     *,
@@ -576,6 +685,8 @@ def _compose_svg_document(
     )
     if theme.center_title:
         _append_line_engine_typography(svg_root, layout=layout, title=title, subtitle=subtitle, theme=theme)
+    elif theme.block_engine_layout:
+        _append_block_engine_typography(svg_root, layout=layout, title=title, subtitle=subtitle, coordinates=coordinates, theme=theme)
     else:
         _append_title_typography(svg_root, layout=layout, title=title, theme=theme)
 

@@ -53,6 +53,7 @@ interface InteractiveCircularViewportProps {
   passepartoutColor: string
   fadeColor: string
   useMinimalCityFade: boolean
+  useCityPlaceholder: boolean
   cityPlaceholderImageSrc: string | null
 }
 
@@ -145,6 +146,7 @@ export const InteractiveCircularViewport = ({
   passepartoutColor,
   fadeColor,
   useMinimalCityFade,
+  useCityPlaceholder,
   cityPlaceholderImageSrc,
 }: InteractiveCircularViewportProps) => {
   const canvasRef = useRef<HTMLDivElement | null>(null)
@@ -298,7 +300,7 @@ export const InteractiveCircularViewport = ({
   }, [customTextAppearance])
 
   const cityHasComposedPoster = moduleKind === 'city-map' && !!cityPreviewSvg
-  const shouldShowCityPlaceholder = useMinimalCityFade && !cityHasComposedPoster && !hasUserSelectedCityLocation && !!cityPlaceholderImageSrc
+  const shouldShowCityPlaceholder = useCityPlaceholder && !cityHasComposedPoster && !hasUserSelectedCityLocation && !!cityPlaceholderImageSrc
   const shouldRenderFullPosterAsset = cityHasComposedPoster || shouldShowCityPlaceholder
   const cityFallbackLayoutStyle = useMemo(() => {
     return {
