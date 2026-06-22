@@ -109,96 +109,245 @@ STYLES = {
         ),
     ),
 
-    "minimal_sand": BlockStyleConfig(
-        background="#E9E4DA",
-        block_colors=[
-            "#F2EEE6",
-            "#E1DBCF",
-            "#CFC6B6",
-            "#B8AEA0",
-            "#9C9286",
-            "#6E6A63",
-            "#2C2C2C",
-        ],
-        road="#FFFFFF",
-        water="#BFD1D6",
-        road_style=RoadStyle(
-            base_width=0.8,
-            multipliers={
-                "highway": 3.0,
-                "arterial": 2.0,
-                "local": 1.0,
-                "minor": 0.45,
-            },
-        ),
-    ),
 
     # -------------------------------------------------------------------------
     # BUILDING ENGINE
     # -------------------------------------------------------------------------
 
-    "vintage_atlas": BuildingStyleConfig(
-        background="#E6D3B3",
+    "midnight_blue": BuildingStyleConfig(
+        background="#081519",
 
         building_colors=[
-            "#C9B28F",
-            "#BFA37C",
-            "#D7C2A4",
-            "#A88F6C",
+            "#7EA6D8",
+            "#5E88C5",
+            "#D8C7A8",
+            "#476FAE",
+            "#355B95",
+            "#192C42",
         ],
-        building_edge="#5C3D23",
-        building_edge_width=0.15,
+        building_edge="#22313F",
+        building_edge_width=0.30,
 
-        green="#C9D8B6",
-        green_edge="#5C3D23",
-        green_edge_width=0.1,
+        green="#34513D",
+        green_edge="#42584A",
+        green_edge_width=0.06,
 
-        water="#8FA6AA",
-        water_edge="#5C3D23",
-        water_edge_width=0.1,
+        water="#081519",
+        water_edge="#081519",
+        water_edge_width=0.08,
 
-        road="#5C3D23",
+        road="#081519",
         road_style=RoadStyle(
-            base_width=1.0,
+            base_width=3.0,
             multipliers={
-                "minor": 0.5,
-                "local": 0.8,
-                "arterial": 1.4,
-                "highway": 1.9,
+                "minor": 1.05,
+                "local": 1.75,
+                "arterial": 2.7,
+                "highway": 4.2,
             },
         ),
     ),
 
-    "pretty_buildings": BuildingStyleConfig(
-        background="#F4F1EB",
+    "architect_sage": BuildingStyleConfig(
+        background="#BFD4D0",
 
         building_colors=[
-            "#F29F1F",
-            "#E27A1F",
-            "#C65A2A",
-            "#D9BB8F",
-            "#F4B942",
-            "#2F2F2F",
+            "#8EA88A",
+            "#78966F",
+            "#63835A",
+            "#4D6F49",
+            "#D6CDB6",
+            "#1E2B22",
         ],
-        building_edge="#6b5b4d",
-        building_edge_width=0.12,
+        building_edge="#324237",
+        building_edge_width=0.30,
 
-        green="#DADFCF",
-        green_edge="#DADFCF",
-        green_edge_width=0,
+        green="#B8C3B6",
+        green_edge="#27442F",
+        green_edge_width=0.06,
 
-        water="#8EC5E8",
-        water_edge="#8EC5E8",
-        water_edge_width=0,
+        water="#9DB8B1",
+        water_edge="#7F9A93",
+        water_edge_width=0.08,
 
-        road="#C9C9C9",
+        road="#FFFFFF",
         road_style=RoadStyle(
-            base_width=1.8,
+            base_width=3.0,
             multipliers={
-                "minor": 0.7,
-                "local": 1.3,
-                "arterial": 1.8,
-                "highway": 2.6,
+                "minor": 1.05,
+                "local": 1.75,
+                "arterial": 2.7,
+                "highway": 4.2,
+            },
+        ),
+    ),
+
+    "warm_terracotta": BuildingStyleConfig(
+        background="#F6E8D7",
+
+        building_colors=[
+            "#D77A61",
+            "#C76754",
+            "#B6594A",
+            "#9D473D",
+            "#EBC7A8",
+            "#3A2A24",
+        ],
+        building_edge="#5A3E36",
+        building_edge_width=0.30,
+
+        green="#B8CFA5",
+        green_edge="#6E7E60",
+        green_edge_width=0.06,
+
+        water="#C4D9E3",
+        water_edge="#607D8A",
+        water_edge_width=0.08,
+
+        road="#5A3E36",
+        road_style=RoadStyle(
+            base_width=3.0,
+            multipliers={
+                "minor": 1.05,
+                "local": 1.75,
+                "arterial": 2.7,
+                "highway": 4.2,
+            },
+        ),
+    ),
+
+    "mono_black": BuildingStyleConfig(
+        background="#F5F5F5",
+
+        building_colors=[
+            "#D8D8D8",
+            "#BEBEBE",
+            "#9F9F9F",
+            "#7C7C7C",
+            "#EAEAEA",
+            "#1A1A1A",
+        ],
+        building_edge="#3A3A3A",
+        building_edge_width=0.30,
+
+        green="#C8C8C8",
+        green_edge="#8A8A8A",
+        green_edge_width=0.06,
+
+        water="#EFEFEF",
+        water_edge="#A5A5A5",
+        water_edge_width=0.08,
+
+        road="#3A3A3A",
+        road_style=RoadStyle(
+            base_width=3.0,
+            multipliers={
+                "minor": 1.05,
+                "local": 1.75,
+                "arterial": 2.7,
+                "highway": 4.2,
+            },
+        ),
+    ),
+
+    "royal_purple": BuildingStyleConfig(
+        background="#1f1e3a",
+
+        building_colors=[
+            "#9D78D1",
+            "#8660BC",
+            "#724EA8",
+            "#e4be8d",
+            "#DCCBEF",
+            "#241A35",
+        ],
+        building_edge="#45335E",
+        building_edge_width=0.30,
+
+        green="#3d3657",
+        green_edge="#3d3657",
+        green_edge_width=0.06,
+
+        water="#1f1e3a",
+        water_edge="#1f1e3a",
+        water_edge_width=0.08,
+
+        road="#1f1e3a",
+        road_style=RoadStyle(
+            base_width=3.0,
+            multipliers={
+                "minor": 1.05,
+                "local": 1.75,
+                "arterial": 2.7,
+                "highway": 4.2,
+            },
+        ),
+    ),
+
+    "sandstone_beige": BuildingStyleConfig(
+        background="#F7F1E8",
+
+        building_colors=[
+            "#D8C4A5",
+            "#C8B18F",
+            "#B69E79",
+            "#A28A64",
+            "#ECE2D4",
+            "#4B4035",
+        ],
+        building_edge="#6B5A48",
+        building_edge_width=0.30,
+
+        green="#8B9B82",
+        green_edge="#56604E",
+        green_edge_width=0.06,
+
+        water="#D9E5EB",
+        water_edge="#7A8D97",
+        water_edge_width=0.08,
+
+        road="#6B5A48",
+        road_style=RoadStyle(
+            base_width=1.785,
+            multipliers={
+                "minor": 1.05,
+                "local": 1.75,
+                "arterial": 2.7,
+                "highway": 4.2,
+            },
+        ),
+    ),
+
+    "luxury_gold": BuildingStyleConfig(
+        background="#111111",
+
+        building_colors=[
+            "#D8B25A",
+            "#C79C44",
+            "#B58630",
+            "#9D7122",
+            "#F0D89B",
+            "#F7E7B6",
+        ],
+        building_edge="#3D2D12",
+        building_edge_width=0.30,
+
+        green="#8A815B",
+        green_edge="#4C4730",
+        green_edge_width=0.06,
+
+        water="#4E5C6A",
+        water_edge="#8896A3",
+        water_edge_width=0.08,
+
+        road="#F0D89B",
+        road_style=RoadStyle(
+            base_width=3.0,
+            multipliers={
+                "minor": 1.05,
+                "local": 1.75,
+                "arterial": 2.7,
+                "highway": 4.2,
             },
         ),
     ),

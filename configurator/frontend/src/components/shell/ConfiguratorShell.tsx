@@ -25,6 +25,8 @@ import {
   resolveCityMapStyle,
   resolveCityStyleFamilyByStyle,
   type BackendCityStyleId,
+  type CityStyleEngine,
+  type CityStyleFamilyId,
 } from '../../content/mapStyleCatalog'
 import type { SelectedLocation } from '../../services/locationSearch'
 import { InteractiveCircularViewport } from '../preview/InteractiveCircularViewport'
@@ -81,6 +83,12 @@ type StepId = 1 | 2 | 3 | 4
 type ActiveStepId = StepId | null
 
 const frameOptions = umcFrameOptions
+
+const cityStyleFamilyEngineMap: Record<CityStyleFamilyId, CityStyleEngine> = {
+  minimal: 'line',
+  district: 'block',
+  architecture: 'building',
+}
 
 const typographyStyleOptions: Array<{
   id: UMCPosterTypographyStyle
@@ -254,9 +262,12 @@ export const ConfiguratorShell = ({
   const selectedCityStyle = resolveCityMapStyle(activeConfig.style.paletteId)
   const selectedCityFamily = resolveCityStyleFamilyByStyle(selectedCityStyle.id)
   const activeCityFamily = cityStyleFamilies.find((family) => family.id === activeCityFamilyId) ?? selectedCityFamily
-  const activeCityFamilyPalettes = activeCityFamily.paletteIds
-    .map((paletteId) => cityMapStyleRegistry.find((style) => style.id === paletteId))
-    .filter((style): style is NonNullable<typeof style> => style != null)
+  const activeCityFamilyPalettes = useMemo(() => {
+    const expectedEngine = cityStyleFamilyEngineMap[activeCityFamily.id]
+    return activeCityFamily.paletteIds
+      .map((paletteId) => cityMapStyleRegistry.find((style) => style.id === paletteId))
+      .filter((style): style is NonNullable<typeof style> => style != null && style.engine === expectedEngine)
+  }, [activeCityFamily])
   const cityRadiusMaxKm = selectedCityStyle.maxRadiusKm
   const radiusStep = selectedCityStyle.radiusStep
   const markerCount = previewObjects.filter((item) => item.type !== 'text').length
@@ -742,54 +753,64 @@ export const ConfiguratorShell = ({
 
           {isCityModule ? (
             <>
-              <p className="umc-field-label">Fő stílus</p>
-              <div className="umc-main-style-grid">
-                {cityStyleFamilies.map((family) => (
-                  <button
-                    key={family.id}
-                    type="button"
-                    className={activeCityFamily.id === family.id ? 'umc-main-style-card umc-main-style-card-active' : 'umc-main-style-card'}
-                    onClick={() => {
-                      setActiveCityFamilyId(family.id)
-                      const fallbackStyleId = family.paletteIds[0]
-                      if (!family.paletteIds.includes(selectedCityStyle.id)) {
-                        selectCityStyle(fallbackStyleId)
-                      }
-                    }}
-                    aria-label={`${family.name} - ${family.description}`}
-                  >
-                    <div className={family.thumbnailClass} />
-                    <strong>{family.name}</strong>
-                  </button>
-                ))}
-              </div>
+              <div className="umc-style-tier-stack">
+                <section className="umc-style-tier-card" aria-label="Map style section">
+                  <p className="umc-style-tier-title">Map Style</p>
+                  <div className="umc-main-style-grid">
+                    {cityStyleFamilies.map((family) => (
+                      <button
+                        key={family.id}
+                        type="button"
+                        className={activeCityFamily.id === family.id ? 'umc-main-style-card umc-main-style-card-active' : 'umc-main-style-card'}
+                        onClick={() => {
+                          setActiveCityFamilyId(family.id)
+                          const fallbackStyleId = family.paletteIds[0]
+                          if (!family.paletteIds.includes(selectedCityStyle.id)) {
+                            selectCityStyle(fallbackStyleId)
+                          }
+                        }}
+                        aria-label={`${family.name} - ${family.description}`}
+                      >
+                        <div className={family.thumbnailClass} />
+                        <strong>{family.name}</strong>
+                      </button>
+                    ))}
+                  </div>
+                </section>
 
-              <p className="umc-field-label">Színpaletta</p>
-              <div className="umc-style-grid">
-                {activeCityFamilyPalettes.map((option) => (
-                  <button
-                    key={option.id}
-                    type="button"
-                    className={`${activeConfig.style.paletteId === option.id ? 'umc-style-card umc-style-card-active' : 'umc-style-card'} umc-rich-tooltip${visiblePaletteTooltipId === option.id ? ' umc-rich-tooltip-visible' : ''}`}
-                    onClick={() => selectCityStyle(option.id)}
-                    onPointerEnter={() => onPaletteTooltipEnter(option.id)}
-                    onPointerMove={() => onPaletteTooltipMove(option.id)}
-                    onPointerLeave={onPaletteTooltipLeave}
-                    onFocus={() => setVisiblePaletteTooltipId(option.id)}
-                    onBlur={onPaletteTooltipLeave}
-                    data-tooltip={option.description}
-                    aria-label={`${option.name} - ${option.description}`}
-                  >
-                    <div className="umc-style-swatch-scale" style={{ background: option.thumbnailBackground }}>
-                      <span style={{ background: option.background }} />
-                      <span style={{ background: option.road }} />
-                      <span style={{ background: option.water }} />
-                      {option.buildingColors?.slice(0, 2).map((color) => <span key={color} style={{ background: color }} />)}
-                      {option.green ? <span style={{ background: option.green }} /> : null}
-                    </div>
-                    <strong className="umc-color-style-title">{option.name}</strong>
-                  </button>
-                ))}
+                <section className="umc-style-tier-card" aria-label="Color palette section">
+                  <p className="umc-style-tier-title">Color Palette</p>
+                  <div className="umc-style-grid">
+                    {activeCityFamilyPalettes.map((option) => (
+                      <button
+                        key={option.id}
+                        type="button"
+                        className={`${activeConfig.style.paletteId === option.id ? 'umc-style-card umc-style-card-active' : 'umc-style-card'} umc-rich-tooltip${visiblePaletteTooltipId === option.id ? ' umc-rich-tooltip-visible' : ''}`}
+                        onClick={() => selectCityStyle(option.id)}
+                        onPointerEnter={() => onPaletteTooltipEnter(option.id)}
+                        onPointerMove={() => onPaletteTooltipMove(option.id)}
+                        onPointerLeave={onPaletteTooltipLeave}
+                        onFocus={() => setVisiblePaletteTooltipId(option.id)}
+                        onBlur={onPaletteTooltipLeave}
+                        data-tooltip={option.description}
+                        aria-label={`${option.name} - ${option.description}`}
+                      >
+                        <div className="umc-style-preview-image-frame">
+                          <img
+                            src={`/city-placeholders/${activeCityFamily.id}/${option.id}_${selectedSizeOption.id}.png`}
+                            alt=""
+                            className="umc-style-preview-image"
+                            loading="lazy"
+                          />
+                        </div>
+                        <strong className="umc-color-style-title">{option.name}</strong>
+                        {activeConfig.style.paletteId === option.id ? (
+                          <span className="umc-style-card-checkmark" aria-hidden="true">✓</span>
+                        ) : null}
+                      </button>
+                    ))}
+                  </div>
+                </section>
               </div>
             </>
           ) : (

@@ -46,11 +46,31 @@ STYLE_REGISTRY = {
     # BUILDING ENGINE STYLES
     # ---------------------------------------------------------
 
-    "vintage_atlas": StyleDefinition(
+    "midnight_blue": StyleDefinition(
         engine=EngineType.BUILDING,
     ),
 
-    "pretty_buildings": StyleDefinition(
+    "architect_sage": StyleDefinition(
+        engine=EngineType.BUILDING,
+    ),
+
+    "warm_terracotta": StyleDefinition(
+        engine=EngineType.BUILDING,
+    ),
+
+    "mono_black": StyleDefinition(
+        engine=EngineType.BUILDING,
+    ),
+
+    "royal_purple": StyleDefinition(
+        engine=EngineType.BUILDING,
+    ),
+
+    "sandstone_beige": StyleDefinition(
+        engine=EngineType.BUILDING,
+    ),
+
+    "luxury_gold": StyleDefinition(
         engine=EngineType.BUILDING,
     ),
 
