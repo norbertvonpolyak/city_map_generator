@@ -55,12 +55,8 @@ def compose_layout_building(
     # BACKGROUND
     # ============================================================
 
-    if palette_name == "pretty_buildings":
-        background_color = colors.HexColor("#F4EFE6")
-        map_background_color = colors.HexColor("#E6D3B3")
-    else:
-        background_color = colors.HexColor("#E6D3B3")
-        map_background_color = None
+    background_color = colors.HexColor("#E6D3B3")
+    map_background_color = None
 
     title_color = colors.HexColor("#5A3A24")
     subtitle_color = colors.HexColor("#8A6A50")

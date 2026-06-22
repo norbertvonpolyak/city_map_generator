@@ -336,6 +336,24 @@ def _resolve_montserrat_font_path(weight: str = "Bold") -> Optional[Path]:
     return None
 
 
+def _resolve_mathilde_font_path() -> Optional[Path]:
+    current = Path(__file__).resolve()
+    candidates = [
+        current.parents[2] / "Fonts" / "Mathilde.ttf",
+        current.parents[2] / "Fonts" / "Mathilde.otf",
+        current.parents[2] / "Fonts" / "Mathilde-Regular.ttf",
+        current.parents[2] / "Fonts" / "Mathilde-Regular.otf",
+        current.parents[3] / "Fonts" / "Mathilde.ttf",
+        current.parents[3] / "Fonts" / "Mathilde.otf",
+        current.parents[3] / "Fonts" / "Mathilde-Regular.ttf",
+        current.parents[3] / "Fonts" / "Mathilde-Regular.otf",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def _derive_title_spec(layout: PosterLayout) -> TitleTypographySpec:
     # Title is backend-controlled: right edge aligned to map area's inner right edge,
     # positioned in the lower-right area of the bottom typography band.
@@ -459,7 +477,10 @@ def _append_block_engine_typography(
     right_edge_cm = layout.width_cm - layout.right_margin_cm
     right_padding_cm = 0.3
     
-    title_font_path = _resolve_monoton_font_path()
+    if theme.title_font_family.lower() == "mathilde":
+        title_font_path = _resolve_mathilde_font_path() or _resolve_monoton_font_path()
+    else:
+        title_font_path = _resolve_monoton_font_path()
     subtitle_font_path = None
     montserrat_medium_path = None
     try:

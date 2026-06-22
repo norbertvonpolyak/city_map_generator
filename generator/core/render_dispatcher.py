@@ -154,14 +154,62 @@ def render_product(
                 block_engine_layout=True,
             )
         elif isinstance(style_cfg, BuildingStyleConfig):
+            if style_name == "midnight_blue":
+                mustard_text = "#C9A227"
+                passepartout_color = "#081519"
+                background_color = "#081519"
+                title_color = mustard_text
+                subtitle_color = mustard_text
+                coordinates_color = mustard_text
+                custom_text_color = mustard_text
+            elif style_name == "sandstone_beige":
+                brown_text = "#4B4035"
+                passepartout_color = style_cfg.background
+                background_color = style_cfg.background
+                title_color = brown_text
+                subtitle_color = brown_text
+                coordinates_color = brown_text
+                custom_text_color = brown_text
+            elif style_name == "luxury_gold":
+                gold_text = "#F0D89B"
+                passepartout_color = style_cfg.background
+                background_color = style_cfg.background
+                title_color = gold_text
+                subtitle_color = gold_text
+                coordinates_color = gold_text
+                custom_text_color = gold_text
+            elif style_name == "royal_purple":
+                mustard_text = "#C9A227"
+                passepartout_color = "#1f1e3a"
+                background_color = "#1f1e3a"
+                title_color = mustard_text
+                subtitle_color = mustard_text
+                coordinates_color = mustard_text
+                custom_text_color = mustard_text
+            elif style_name == "architect_sage":
+                forest_text = "#1E2B22"
+                passepartout_color = "#BFD4D0"
+                background_color = "#BFD4D0"
+                title_color = forest_text
+                subtitle_color = forest_text
+                coordinates_color = forest_text
+                custom_text_color = forest_text
+            else:
+                passepartout_color = style_cfg.background
+                background_color = style_cfg.background
+                title_color = "#4E4E4E"
+                subtitle_color = "#4E4E4E"
+                coordinates_color = "#4E4E4E"
+                custom_text_color = "#4E4E4E"
+
             theme = PosterTheme(
-                background_color=style_cfg.background,
-                passepartout_color=style_cfg.background,
-                title_color="#4E4E4E",
-                subtitle_color="#4E4E4E",
-                coordinates_color="#4E4E4E",
-                custom_text_color="#4E4E4E",
-                title_font_family="Monoton-Regular",
+                background_color=background_color,
+                passepartout_color=passepartout_color,
+                title_color=title_color,
+                subtitle_color=subtitle_color,
+                coordinates_color=coordinates_color,
+                custom_text_color=custom_text_color,
+                title_font_family="Mathilde",
                 subtitle_font_family="Helvetica",
                 body_font_family="Helvetica",
                 block_engine_layout=True,
@@ -199,6 +247,11 @@ def render_product(
                 body_font_family="Helvetica",
             )
 
+        # Keep block/line behavior unchanged; only building titles are de-shouted.
+        display_title = title
+        if isinstance(style_cfg, BuildingStyleConfig) and title and title.isupper():
+            display_title = title.title()
+
         # Format coordinates for display
         coordinates_str = f"{center_lat:.4f}°N  {center_lon:.4f}°E"
         
@@ -207,7 +260,7 @@ def render_product(
             map_svg_path=map_output_path,
             output_dir=output_dir,
             filename_prefix=filename_prefix,
-            title=title,
+            title=display_title,
             subtitle=subtitle,
             coordinates=coordinates_str,
             custom_text=None,
