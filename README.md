@@ -263,6 +263,31 @@ python main.py \
 
 ---
 
+# Star Map (Rebuilt)
+
+The star map backend is rebuilt around Skyfield and supports parameterized rendering by:
+
+- place (name or latitude/longitude)
+- local date and time
+- limiting magnitude and field of view
+
+Batch render entrypoint:
+
+```bash
+python batch_render_stars.py
+```
+
+The script currently demonstrates these parameters:
+
+- location_query: place-name geocoding
+- when_local: local datetime input
+- lat/lon: explicit coordinate override
+- limiting_magnitude
+- field_of_view_degrees
+- max_star_size
+
+---
+
 # 📦 Project Structure (Backend)
 
 ```

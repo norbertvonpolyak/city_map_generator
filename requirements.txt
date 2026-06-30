@@ -15,3 +15,6 @@ svglib==1.6.0
 cairosvg==2.7.1
 pymupdf==1.26.5
 scipy==1.17.0
+skyfield==1.53
+geopy==2.4.1
+timezonefinder==6.5.7
