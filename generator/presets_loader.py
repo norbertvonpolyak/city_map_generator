@@ -12,8 +12,7 @@ from generator.specs import ProductLine, ProductSpec
 
 LayoutPreset = Literal[
     "default",              # citymap / fallback
-    "legacy_portrait",      # starmap álló (körös, régi arányos)
-    "banded_square_50",     # starmap 50x50 speciális keretsávos
+    "starmap_skyfield",     # rebuilt starmap engine preset
 ]
 
 
@@ -31,9 +30,8 @@ def choose_layout_preset(
 
     JELENLEGI SZABÁLYOK:
 
-    STARMAP:
-      - 50x50  -> banded_square_50
-      - minden más (álló) -> legacy_portrait
+        STARMAP:
+            - all sizes -> starmap_skyfield
 
     CITYMAP:
       - default (render mód dönti el a részleteket)
@@ -43,9 +41,7 @@ def choose_layout_preset(
     # STARMAP
     # -----------------
     if product_line == ProductLine.STARMAP:
-        if spec.width_cm == 50 and spec.height_cm == 50:
-            return "banded_square_50"
-        return "legacy_portrait"
+        return "starmap_skyfield"
 
     # -----------------
     # CITYMAP (blocks / pretty / mono)
