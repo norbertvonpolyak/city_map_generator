@@ -29,6 +29,21 @@ class MapLayerResult:
     output_png: Optional[Path] = None
 
 
+def _road_width_scale_for_extent(extent_m: float) -> float:
+    """Linear block-road width scaling between webshop extent bounds.
+
+    - 2000m extent -> 100% width
+    - 5000m extent -> 70% width
+    """
+    min_extent = 2000.0
+    max_extent = 5000.0
+    max_reduction = 0.30
+
+    clamped = max(min_extent, min(max_extent, float(extent_m)))
+    t = (clamped - min_extent) / (max_extent - min_extent)
+    return 1.0 - (max_reduction * t)
+
+
 def _classify_road(hw: str) -> str:
 
     hw = str(hw)
@@ -433,6 +448,7 @@ def render_map_block(
     )
 
     base_width = style_cfg.road_style.base_width
+    extent_scale = _road_width_scale_for_extent(spec.extent_m)
     multipliers = style_cfg.road_style.multipliers
 
     for road_class, m in multipliers.items():
@@ -444,7 +460,7 @@ def render_map_block(
 
         subset.plot(
             ax=ax,
-            linewidth=base_width * m,
+            linewidth=base_width * m * extent_scale,
             color=style_cfg.road,
             zorder=3
         )
