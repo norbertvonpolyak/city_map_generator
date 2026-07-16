@@ -222,6 +222,23 @@ Current solution:
 - Fade geometry and opacity profile are identical across SVG/PDF/PNG outputs.  
 - For dark Line Engine minimal palettes (Minimal Night, Blueprint), fade color is black while preserving the same fade geometry and opacity progression.  
 
+### Building Engine Water and Bridge Behavior (Current)
+
+- Building Engine now draws water as a dissolved, seam-free surface to avoid mid-river artifacts caused by overlapping inner geometries.  
+- `waterway` overlays are treated as fallback only when no polygonal water surface is available.  
+- Non-water polygon layers are masked against the final water geometry to prevent accidental overlays inside river surfaces.  
+- Bridge segments are rendered as a dedicated top layer so crossings stay distinguishable from water and building fills.  
+
+Current bridge color rules in Building Engine:
+
+- `architect_sage`: `#bfd4cf`  
+- `warm_terracotta`: `#f5e8d6`  
+- `sandstone_beige`: road color  
+- `luxury_gold`: `#111111`  
+- `midnight_blue`: `#183940`  
+- `mono_black`: `#e0e0e0`  
+- `royal_purple`: `#4b4779`  
+
 ### Configurator Placeholder Behavior (Current)
 
 - For Line Engine minimal styles, static placeholder PNG assets are used before the customer selects a custom location.  
