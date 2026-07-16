@@ -502,6 +502,10 @@ def _append_block_engine_typography(
     upper_half_height_cm = band_height_cm * 0.50
     top_inset_cm = band_height_cm * 0.07
 
+    # Only block engine typography should be vertically centered in the first
+    # passepartout band; building keeps its existing vertical rhythm.
+    is_block_engine = theme.title_font_family.lower() != "mathilde"
+
     if coordinates:
         total_ratio = base_title_ratio + base_gap_ratio + base_coord_ratio
         scale_factor = upper_half_height_cm / (band_height_cm * total_ratio)
@@ -509,18 +513,26 @@ def _append_block_engine_typography(
         coord_height_cm = band_height_cm * base_coord_ratio * scale_factor
         edge_gap_title_coord_cm = band_height_cm * base_gap_ratio * scale_factor
 
-        stack_top_cm = band_height_cm - top_inset_cm
-        title_cy_from_bottom = stack_top_cm - (title_height_cm / 2)
-        coord_cy_from_bottom = (
-            title_cy_from_bottom
-            - (title_height_cm / 2)
-            - edge_gap_title_coord_cm
-            - (coord_height_cm / 2)
-        )
+        if is_block_engine:
+            stack_center_cm = band_height_cm * 0.50
+            title_cy_from_bottom = stack_center_cm + ((edge_gap_title_coord_cm + coord_height_cm) / 2)
+            coord_cy_from_bottom = stack_center_cm - ((title_height_cm + edge_gap_title_coord_cm) / 2)
+        else:
+            stack_top_cm = band_height_cm - top_inset_cm
+            title_cy_from_bottom = stack_top_cm - (title_height_cm / 2)
+            coord_cy_from_bottom = (
+                title_cy_from_bottom
+                - (title_height_cm / 2)
+                - edge_gap_title_coord_cm
+                - (coord_height_cm / 2)
+            )
     else:
         title_height_cm = upper_half_height_cm
         coord_height_cm = 0.0
-        title_cy_from_bottom = (band_height_cm - top_inset_cm) - (title_height_cm / 2)
+        if is_block_engine:
+            title_cy_from_bottom = band_height_cm * 0.50
+        else:
+            title_cy_from_bottom = (band_height_cm - top_inset_cm) - (title_height_cm / 2)
         coord_cy_from_bottom = 0.0
     
     # Draw title
