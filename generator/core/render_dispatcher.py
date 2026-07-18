@@ -1,17 +1,18 @@
 from pathlib import Path
 from datetime import datetime
 from tempfile import TemporaryDirectory
+from PIL import Image
 
 from generator.engines.render_block import render_map_block
 from generator.engines.render_building import render_map_building
 from generator.engines.render_line import render_map_line
 
 from generator.specs import ProductSpec
-from generator.layouts.layout_utils import build_poster_layout, compose_poster_outputs, PosterTheme, PosterCompositionResult
+from generator.layouts.layout_utils import build_poster_layout, compose_poster_outputs, PosterTheme, PosterCompositionResult, svg_to_pdf
 from generator.layouts.layout_block import compose_layout_block
 from generator.layouts.layout_building import compose_layout_building
 from generator.core.style_registry import STYLE_REGISTRY, EngineType
-from generator.styles import get_style_config, BlockStyleConfig, BuildingStyleConfig, LineStyleConfig
+from generator.styles import get_style_config, BlockStyleConfig, BuildingStyleConfig, MaptoposterLineStyleConfig
 from uuid import uuid4
 
 # ==========================================================
@@ -58,8 +59,26 @@ def render_product(
 
     style_def = STYLE_REGISTRY[style_name]
     style_cfg = get_style_config(style_name)
-    uniform_margins = STYLE_REGISTRY[style_name].engine == EngineType.LINE
-    layout = build_poster_layout(spec.width_cm, spec.height_cm, uniform_margins=uniform_margins)
+
+    if isinstance(style_cfg, MaptoposterLineStyleConfig):
+        uniform_margins = style_cfg.layout.uniform_margins
+    else:
+        uniform_margins = STYLE_REGISTRY[style_name].engine == EngineType.LINE
+
+    bottom_margin_ratio = None
+
+    if isinstance(style_cfg, MaptoposterLineStyleConfig):
+        bottom_margin_ratio = style_cfg.layout.bottom_margin_ratio
+    elif style_name == "old_time_fantasy" and STYLE_REGISTRY[style_name].engine == EngineType.LINE:
+        # Taller lower passepartout to match premium reference composition.
+        bottom_margin_ratio = 0.15
+
+    layout = build_poster_layout(
+        spec.width_cm,
+        spec.height_cm,
+        uniform_margins=uniform_margins,
+        bottom_margin_ratio=bottom_margin_ratio,
+    )
     viewport_half_width_m, viewport_half_height_m = layout.map_viewport_half_sizes_m(spec.extent_m)
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -132,6 +151,7 @@ def render_product(
                 palette_name=style_name,
                 preview_mode=preview_mode,
                 filename_prefix=filename_prefix,
+                use_cache=use_cache,
             )
 
         else:
@@ -214,25 +234,20 @@ def render_product(
                 body_font_family="Helvetica",
                 block_engine_layout=True,
             )
-        elif isinstance(style_cfg, LineStyleConfig):
-            _bg = style_cfg.background.lstrip("#")
-            _r, _g, _b = int(_bg[0:2], 16), int(_bg[2:4], 16), int(_bg[4:6], 16)
-            _lum = (0.2126 * _r + 0.7152 * _g + 0.0722 * _b) / 255
-            _text_color = "#F2F0EB" if _lum < 0.4 else "#1C1C1C"
-            _fade_color = "#000000" if _lum < 0.4 else "#F6F3EE"
+        elif isinstance(style_cfg, MaptoposterLineStyleConfig):
             theme = PosterTheme(
-                background_color=style_cfg.background,
-                passepartout_color="#F6F3EE",
-                bottom_fade_color=_fade_color,
-                title_color=_text_color,
-                subtitle_color=_text_color,
-                coordinates_color=_text_color,
-                custom_text_color=_text_color,
-                title_font_family="Montserrat-Bold",
-                subtitle_font_family="Montserrat-Medium",
-                body_font_family="Montserrat-Medium",
-                bottom_fade=True,
-                center_title=True,
+                background_color=style_cfg.render.background,
+                passepartout_color=style_cfg.layout.passepartout_color,
+                bottom_fade_color=style_cfg.layout.bottom_fade_color,
+                title_color=style_cfg.layout.title_color,
+                subtitle_color=style_cfg.layout.subtitle_color,
+                coordinates_color=style_cfg.layout.coordinates_color,
+                custom_text_color=style_cfg.layout.custom_text_color,
+                title_font_family=style_cfg.layout.title_font_family,
+                subtitle_font_family=style_cfg.layout.subtitle_font_family,
+                body_font_family=style_cfg.layout.body_font_family,
+                bottom_fade=style_cfg.layout.bottom_fade,
+                center_title=style_cfg.layout.center_title,
             )
         else:
             theme = PosterTheme(
@@ -265,8 +280,62 @@ def render_product(
             coordinates=coordinates_str,
             custom_text=None,
             theme=theme,
-            export_pdf=not preview_mode,
+            export_pdf=(not preview_mode) and (not isinstance(style_cfg, MaptoposterLineStyleConfig)),
         )
+
+        if isinstance(style_cfg, MaptoposterLineStyleConfig):
+            output_pdf = output_dir / f"{filename_prefix}.pdf"
+            svg_to_pdf(
+                svg_path=layout_result.output_svg,
+                output_pdf=output_pdf,
+                layout=layout,
+                prefer_cairo=False,
+            )
+
+            import fitz
+
+            doc = fitz.open(str(output_pdf))
+            page = doc[0]
+            pix = page.get_pixmap(dpi=96)
+            pix.save(str(layout_result.output_png))
+            doc.close()
+
+            output_webp = output_dir / f"{filename_prefix}.webp"
+            max_webp_size_bytes = 350 * 1024
+            quality_steps = [88, 82, 76, 70, 64, 58, 52, 46, 40, 35]
+            methods = [6, 4]
+
+            with Image.open(layout_result.output_png) as png_img:
+                saved_under_cap = False
+                for method in methods:
+                    for quality in quality_steps:
+                        png_img.save(
+                            output_webp,
+                            format="WEBP",
+                            quality=quality,
+                            method=method,
+                            optimize=True,
+                        )
+                        if output_webp.stat().st_size <= max_webp_size_bytes:
+                            saved_under_cap = True
+                            break
+                    if saved_under_cap:
+                        break
+
+                if not saved_under_cap:
+                    png_img.save(
+                        output_webp,
+                        format="WEBP",
+                        quality=30,
+                        method=6,
+                        optimize=True,
+                    )
+
+            layout_result = PosterCompositionResult(
+                output_svg=layout_result.output_svg,
+                output_png=layout_result.output_png,
+                output_pdf=output_pdf,
+            )
 
         # NOTE: Typography is now embedded in SVG for all engines
         # (block, building, line). The SVG is the single source of truth.

@@ -114,11 +114,19 @@ class PosterCompositionResult:
     output_pdf: Optional[Path] = None
 
 
-def build_poster_layout(width_cm: float, height_cm: float, uniform_margins: bool = False) -> PosterLayout:
+def build_poster_layout(
+    width_cm: float,
+    height_cm: float,
+    uniform_margins: bool = False,
+    bottom_margin_ratio: Optional[float] = None,
+) -> PosterLayout:
     short_side_cm = min(width_cm, height_cm)
     side_margin_cm = short_side_cm * 0.04
     top_margin_cm = side_margin_cm
-    bottom_margin_cm = side_margin_cm if uniform_margins else height_cm * 0.10
+    if bottom_margin_ratio is not None:
+        bottom_margin_cm = height_cm * bottom_margin_ratio
+    else:
+        bottom_margin_cm = side_margin_cm if uniform_margins else height_cm * 0.10
 
     visible_width_cm = width_cm - (side_margin_cm * 2)
     visible_height_cm = height_cm - top_margin_cm - bottom_margin_cm
@@ -246,7 +254,7 @@ def _append_passepartout(svg_root: ET.Element, layout: PosterLayout, color: str,
     # Bottom: use an embedded raster alpha gradient to avoid visible banding
     # while staying compatible with svglib/reportlab image rendering.
     if bottom_fade:
-        fade_height = layout.height_cm * 0.40
+        fade_height = layout.height_cm * 0.10
         fade_y = layout.height_cm - layout.bottom_margin_cm - fade_height
         img_w = 32
         img_h = 1200
@@ -257,7 +265,7 @@ def _append_passepartout(svg_root: ET.Element, layout: PosterLayout, color: str,
         gradient[:, :, 2] = rgb[2]
         for y in range(img_h):
             t = y / max(1, img_h - 1)
-            alpha = int(min(1.0, t ** 2.2) * 255)
+            alpha = int(max(0.0, min(1.0, t ** 2.2)) * 255)
             gradient[y, :, 3] = alpha
 
         image = Image.fromarray(gradient, mode="RGBA")
@@ -334,6 +342,113 @@ def _resolve_montserrat_font_path(weight: str = "Bold") -> Optional[Path]:
         if candidate.exists():
             return candidate
     return None
+
+
+def _resolve_dm_sans_font_path(weight: str = "Regular") -> Optional[Path]:
+    current = Path(__file__).resolve()
+    candidates = [
+        current.parents[1] / "Fonts" / f"DMSans-{weight}.ttf",
+        current.parents[2] / "Fonts" / f"DMSans-{weight}.ttf",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _resolve_dejavu_sans_font_path() -> Optional[Path]:
+    try:
+        candidate = Path(FontProperties(family="DejaVu Sans").get_file())
+        if candidate.exists():
+            return candidate
+    except Exception:
+        pass
+    return None
+
+
+def _resolve_dejavu_sans_font_path() -> Optional[Path]:
+    try:
+        candidate = Path(FontProperties(family="DejaVu Sans").get_file())
+        if candidate.exists():
+            return candidate
+    except Exception:
+        pass
+    return None
+
+
+def _resolve_any_font_path(font_family: str) -> Optional[Path]:
+    family = (font_family or "").strip().lower()
+    candidates: list[Path] = []
+    if family:
+        try:
+            candidate = Path(FontProperties(family=font_family).get_file())
+            if candidate.exists():
+                return candidate
+        except Exception:
+            pass
+
+    if "dm" in family and "sans" in family:
+        candidates.extend([
+            _resolve_dm_sans_font_path("Regular"),
+            _resolve_dejavu_sans_font_path(),
+            _resolve_montserrat_font_path("Medium"),
+            _resolve_inter_extra_light_font_path(),
+        ])
+    elif "cormorant" in family:
+        candidates.extend([
+            _resolve_cormorant_font_path(),
+            _resolve_montserrat_font_path("Bold"),
+        ])
+    elif "inter" in family:
+        candidates.extend([
+            _resolve_inter_extra_light_font_path(),
+            _resolve_montserrat_font_path("Medium"),
+        ])
+    elif "montserrat-medium" in family:
+        candidates.extend([
+            _resolve_montserrat_font_path("Medium"),
+            _resolve_montserrat_font_path("Bold"),
+        ])
+    elif "montserrat" in family:
+        candidates.append(_resolve_montserrat_font_path("Bold"))
+    elif "mathilde" in family:
+        candidates.extend([
+            _resolve_mathilde_font_path(),
+            _resolve_monoton_font_path(),
+        ])
+
+    for candidate in candidates:
+        if candidate is not None and candidate.exists():
+            return candidate
+    return None
+
+
+def _resolve_cormorant_font_path() -> Optional[Path]:
+    current = Path(__file__).resolve()
+    candidates = [
+        current.parents[1] / "Fonts" / "CormorantGaramond-SemiBold.ttf",
+        current.parents[2] / "Fonts" / "CormorantGaramond-SemiBold.ttf",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _resolve_inter_extra_light_font_path() -> Optional[Path]:
+    current = Path(__file__).resolve()
+    candidates = [
+        current.parents[1] / "Fonts" / "Inter_18pt-ExtraLight.ttf",
+        current.parents[2] / "Fonts" / "Inter_18pt-ExtraLight.ttf",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _resolve_font_path_by_family(font_family: str) -> Optional[Path]:
+    return _resolve_any_font_path(font_family) or _resolve_montserrat_font_path("Bold") or _resolve_monoton_font_path()
 
 
 def _resolve_mathilde_font_path() -> Optional[Path]:
@@ -581,18 +696,27 @@ def _append_line_engine_typography(
 ) -> None:
     typo = ET.SubElement(svg_root, f"{{{SVG_NS}}}g", {"id": "line-engine-typography"})
 
-    title_font_path = _resolve_montserrat_font_path("Bold") or _resolve_monoton_font_path()
-    fade_zone_cm = layout.height_cm * 0.40 + layout.bottom_margin_cm
-    map_cx = layout.map_box.x_cm + layout.map_box.width_cm / 2
-    title_height_cm = layout.height_cm * 0.050
-    sub_height_cm = layout.height_cm * 0.018
-    line_gap_cm = layout.height_cm * 0.004
-    title_cy = fade_zone_cm * 0.25
-    subtitle_cy = title_cy - ((title_height_cm + sub_height_cm) / 2) - line_gap_cm
+    title_font_path = _resolve_font_path_by_family(theme.title_font_family)
+    subtitle_font_path = _resolve_font_path_by_family(theme.subtitle_font_family)
+    coordinate_font_path = _resolve_dejavu_sans_font_path() or _resolve_montserrat_font_path("Medium") or _resolve_dm_sans_font_path("Regular") or subtitle_font_path
+    is_old_time_layout = "cormorant" in (theme.title_font_family or "").lower()
 
-    # ---- TITLE: Montserrat Bold, centered ----
+    footer_fade_cm = layout.height_cm * 0.10 if is_old_time_layout else layout.height_cm * 0.40
+    footer_total_cm = layout.bottom_margin_cm + footer_fade_cm
+    footer_center_cm = footer_total_cm / 2
+    map_cx = layout.map_box.x_cm + layout.map_box.width_cm / 2
+    title_height_cm = layout.height_cm * (0.073 if is_old_time_layout else 0.050)
+    sub_height_cm = layout.height_cm * (0.026 if is_old_time_layout else 0.018)
+    line_gap_cm = layout.height_cm * (0.025 if is_old_time_layout else 0.004)
+    title_cy = footer_center_cm + (footer_total_cm * 0.08) if is_old_time_layout else footer_center_cm
+    subtitle_cy = footer_center_cm - (footer_total_cm * 0.30) if is_old_time_layout else title_cy - ((title_height_cm + sub_height_cm) / 2) - line_gap_cm
+
+    # ---- TITLE: centered, style-driven font ----
     if title_font_path and title:
-        title_text = title.upper()
+        if is_old_time_layout:
+            title_text = " ".join(title.upper())
+        else:
+            title_text = title.upper()
         cx = map_cx
         cy = title_cy
 
@@ -611,12 +735,16 @@ def _append_line_engine_typography(
                 "id": "title-text",
             })
 
-    # ---- SUBTITLE: Montserrat Medium, centered, with flanking lines ----
-    sub_font_path = _resolve_montserrat_font_path("Medium") or title_font_path
+    # ---- SUBTITLE: centered, with optional old-time ornament ----
+    sub_font_path = coordinate_font_path or subtitle_font_path or title_font_path
     if sub_font_path and subtitle:
         sub_text = subtitle.upper()
         cx = map_cx
-        cy = subtitle_cy
+        if is_old_time_layout:
+            ornament_y = footer_center_cm
+            cy = subtitle_cy
+        else:
+            cy = subtitle_cy
 
         sp = TextPath((0, 0), sub_text, prop=FontProperties(fname=str(sub_font_path)), size=1)
         s_bbox = sp.get_extents()
@@ -633,33 +761,82 @@ def _append_line_engine_typography(
                 "id": "subtitle-text",
             })
 
-            # Horizontal lines flanking the subtitle
-            spacer_path = TextPath((0, 0), "MMM", prop=FontProperties(fname=str(sub_font_path)), size=1)
-            spacer_bbox = spacer_path.get_extents()
-            gap_cm = max(sw * 0.06, spacer_bbox.width * s_scale)
-            edge_margin_cm = layout.width_cm * 0.06
-            sub_svg_y = _svg_y_from_bottom(layout, cy)
-            stroke_w = layout.height_cm * 0.0018
+            if is_old_time_layout:
+                # Premium ornament: line * line, with coordinates below.
+                ornament_svg_y = _svg_y_from_bottom(layout, ornament_y)
+                star_font = subtitle_font_path or title_font_path
+                star_path = TextPath((0, 0), "*", prop=FontProperties(fname=str(star_font)), size=1)
+                star_bbox = star_path.get_extents()
+                star_height_cm = layout.height_cm * 0.014
+                star_width_cm = 0.0
+                if star_bbox.height > 0:
+                    star_scale = star_height_cm / star_bbox.height
+                    star_width_cm = star_bbox.width * star_scale
+                    star_offset_x = cx - (star_width_cm / 2) - (star_bbox.x0 * star_scale)
+                    star_bottom_y = ornament_y - (star_bbox.height * star_scale / 2) - (star_bbox.y0 * star_scale)
+                    star_d = _text_path_to_svg_d(
+                        star_path,
+                        scale=star_scale,
+                        offset_x_cm=star_offset_x,
+                        offset_y_cm=star_bottom_y,
+                        layout=layout,
+                    )
+                    ET.SubElement(typo, f"{{{SVG_NS}}}path", {
+                        "d": star_d,
+                        "fill": theme.custom_text_color,
+                        "stroke": "none",
+                        "id": "line-ornament-star",
+                    })
 
-            lx1 = layout.left_margin_cm + edge_margin_cm
-            lx2 = cx - sw / 2 - gap_cm
-            rx1 = cx + sw / 2 + gap_cm
-            rx2 = layout.width_cm - layout.right_margin_cm - edge_margin_cm
+                stroke_w = 0.053  # ~2px at 96 dpi
+                edge_margin_cm = layout.width_cm * 0.12
+                star_gap_cm = max(layout.width_cm * 0.03, star_width_cm * 0.90)
+                lx1 = layout.left_margin_cm + edge_margin_cm
+                lx2 = cx - (star_width_cm / 2) - star_gap_cm
+                rx1 = cx + (star_width_cm / 2) + star_gap_cm
+                rx2 = layout.width_cm - layout.right_margin_cm - edge_margin_cm
+                if lx2 > lx1:
+                    ET.SubElement(typo, f"{{{SVG_NS}}}line", {
+                        "x1": f"{lx1:.4f}", "y1": f"{ornament_svg_y:.4f}",
+                        "x2": f"{lx2:.4f}", "y2": f"{ornament_svg_y:.4f}",
+                        "stroke": theme.custom_text_color,
+                        "stroke-width": f"{stroke_w:.4f}",
+                    })
+                if rx2 > rx1:
+                    ET.SubElement(typo, f"{{{SVG_NS}}}line", {
+                        "x1": f"{rx1:.4f}", "y1": f"{ornament_svg_y:.4f}",
+                        "x2": f"{rx2:.4f}", "y2": f"{ornament_svg_y:.4f}",
+                        "stroke": theme.custom_text_color,
+                        "stroke-width": f"{stroke_w:.4f}",
+                    })
+            else:
+                spacer_sample = "MMM"
+                spacer_path = TextPath((0, 0), spacer_sample, prop=FontProperties(fname=str(sub_font_path)), size=1)
+                spacer_bbox = spacer_path.get_extents()
+                gap_cm = max(sw * 0.06, spacer_bbox.width * s_scale)
+                edge_margin_cm = layout.width_cm * 0.06
+                sub_svg_y = _svg_y_from_bottom(layout, cy)
+                stroke_w = layout.height_cm * 0.0018
 
-            if lx2 > lx1:
-                ET.SubElement(typo, f"{{{SVG_NS}}}line", {
-                    "x1": f"{lx1:.4f}", "y1": f"{sub_svg_y:.4f}",
-                    "x2": f"{lx2:.4f}", "y2": f"{sub_svg_y:.4f}",
-                    "stroke": theme.subtitle_color,
-                    "stroke-width": f"{stroke_w:.4f}",
-                })
-            if rx2 > rx1:
-                ET.SubElement(typo, f"{{{SVG_NS}}}line", {
-                    "x1": f"{rx1:.4f}", "y1": f"{sub_svg_y:.4f}",
-                    "x2": f"{rx2:.4f}", "y2": f"{sub_svg_y:.4f}",
-                    "stroke": theme.subtitle_color,
-                    "stroke-width": f"{stroke_w:.4f}",
-                })
+                lx1 = layout.left_margin_cm + edge_margin_cm
+                lx2 = cx - sw / 2 - gap_cm
+                rx1 = cx + sw / 2 + gap_cm
+                rx2 = layout.width_cm - layout.right_margin_cm - edge_margin_cm
+
+                if lx2 > lx1:
+                    ET.SubElement(typo, f"{{{SVG_NS}}}line", {
+                        "x1": f"{lx1:.4f}", "y1": f"{sub_svg_y:.4f}",
+                        "x2": f"{lx2:.4f}", "y2": f"{sub_svg_y:.4f}",
+                        "stroke": theme.subtitle_color,
+                        "stroke-width": f"{stroke_w:.4f}",
+                    })
+                if rx2 > rx1:
+                    ET.SubElement(typo, f"{{{SVG_NS}}}line", {
+                        "x1": f"{rx1:.4f}", "y1": f"{sub_svg_y:.4f}",
+                        "x2": f"{rx2:.4f}", "y2": f"{sub_svg_y:.4f}",
+                        "stroke": theme.subtitle_color,
+                        "stroke-width": f"{stroke_w:.4f}",
+                    })
 
 
 def _compose_svg_document(
@@ -673,6 +850,7 @@ def _compose_svg_document(
     theme: PosterTheme,
 ) -> str:
     source_root = ET.parse(map_svg_path).getroot()
+    is_old_time_layout = theme.center_title and theme.title_font_family == "CormorantSemiBold"
     svg_root = ET.Element(f"{{{SVG_NS}}}svg", {
         "width": f"{layout.width_cm:.4f}cm",
         "height": f"{layout.height_cm:.4f}cm",
@@ -700,6 +878,18 @@ def _compose_svg_document(
         "viewBox": source_root.get("viewBox") or f"0 0 {source_root.get('width', layout.map_box.width_cm)} {source_root.get('height', layout.map_box.height_cm)}",
         "id": "map-layer",
     })
+
+    if is_old_time_layout:
+        source_viewbox = source_root.get("viewBox")
+        if source_viewbox:
+            parts = source_viewbox.replace(",", " ").split()
+            if len(parts) == 4:
+                try:
+                    vb_x, vb_y, vb_w, vb_h = map(float, parts)
+                    embedded_svg.set("viewBox", f"{vb_x:.4f} {vb_y:.4f} {vb_w:.4f} {vb_h * 1.06:.4f}")
+                    embedded_svg.set("preserveAspectRatio", "xMidYMin meet")
+                except Exception:
+                    pass
 
     for key, value in source_root.attrib.items():
         if key in {"width", "height", "x", "y", "viewBox"}:
@@ -789,11 +979,11 @@ def svg_to_png(*, svg_path: Path, output_png: Path, dpi: int = 96) -> None:
     )
 
 
-def svg_to_pdf(*, svg_path: Path, output_pdf: Path, layout: PosterLayout) -> None:
+def svg_to_pdf(*, svg_path: Path, output_pdf: Path, layout: PosterLayout, prefer_cairo: bool = True) -> None:
     """Thin SVG → PDF export. The composed SVG is the single source of truth.
     No layout is recalculated here.
     """
-    output_pdf.write_bytes(_svg_to_pdf_bytes(svg_path=svg_path, layout=layout))
+    output_pdf.write_bytes(_svg_to_pdf_bytes(svg_path=svg_path, layout=layout, prefer_cairo=prefer_cairo))
 
 
 def _register_font_if_available(font_name: str, font_path: Optional[Path]) -> str:
@@ -850,7 +1040,7 @@ def _compose_line_engine_pdf_bytes(
         layout.map_box.y_cm * cm,
     )
 
-    fade_height_pt = layout.height_cm * 0.40 * cm
+    fade_height_pt = layout.height_cm * 0.10 * cm
     fade_overlay = _build_fade_image(theme.bottom_fade_color or theme.passepartout_color)
     pdf_canvas.drawImage(
         fade_overlay,
@@ -861,57 +1051,97 @@ def _compose_line_engine_pdf_bytes(
         mask="auto",
     )
 
-    montserrat_bold = _register_font_if_available("MontserratBoldPoster", _resolve_montserrat_font_path("Bold"))
-    montserrat_medium = _register_font_if_available("MontserratMediumPoster", _resolve_montserrat_font_path("Medium"))
+    title_font_path = _resolve_font_path_by_family(theme.title_font_family)
+    subtitle_font_path = _resolve_font_path_by_family(theme.subtitle_font_family)
+    coordinate_font_path = _resolve_montserrat_font_path("Medium") or _resolve_dm_sans_font_path("Regular") or subtitle_font_path
+    title_font = _register_font_if_available("LineTitlePoster", title_font_path)
+    subtitle_font = _register_font_if_available("LineSubtitlePoster", subtitle_font_path)
+    coordinate_font = _register_font_if_available("LineCoordinatePoster", coordinate_font_path)
+    is_old_time_layout = "cormorant" in (theme.title_font_family or "").lower()
 
     text_color = colors.HexColor(theme.title_color)
     pdf_canvas.setFillColor(text_color)
     pdf_canvas.setStrokeColor(text_color)
 
-    fade_zone_cm = layout.height_cm * 0.40 + layout.bottom_margin_cm
-    title_size_pt = layout.height_cm * 0.050 * cm
-    subtitle_size_pt = layout.height_cm * 0.018 * cm
+    footer_fade_cm = layout.height_cm * 0.10 if is_old_time_layout else layout.height_cm * 0.40
+    footer_total_cm = layout.bottom_margin_cm + footer_fade_cm
+    footer_center_pt = (footer_total_cm / 2) * cm
+    title_size_pt = layout.height_cm * (0.073 if is_old_time_layout else 0.050) * cm
+    subtitle_size_pt = layout.height_cm * (0.026 if is_old_time_layout else 0.018) * cm
     center_x_pt = (layout.map_box.x_cm + layout.map_box.width_cm / 2) * cm
-    line_gap_pt = layout.height_cm * 0.004 * cm
-    title_cy_pt = fade_zone_cm * 0.25 * cm
-    subtitle_cy_pt = title_cy_pt - ((title_size_pt + subtitle_size_pt) / 2) - line_gap_pt
+    line_gap_pt = layout.height_cm * (0.028 if is_old_time_layout else 0.004) * cm
+    title_cy_pt = footer_center_pt - (footer_total_cm * 0.08 * cm) if is_old_time_layout else footer_center_pt
+    subtitle_cy_pt = footer_center_pt - (footer_total_cm * 0.30 * cm) if is_old_time_layout else title_cy_pt - ((title_size_pt + subtitle_size_pt) / 2) - line_gap_pt
     title_y_pt = title_cy_pt - (title_size_pt * 0.28)
+    if is_old_time_layout:
+        ornament_y_pt = footer_center_pt
     subtitle_y_pt = subtitle_cy_pt - (subtitle_size_pt * 0.22)
 
-    title_text = title.upper()
-    pdf_canvas.setFont(montserrat_bold, title_size_pt)
-    title_width_pt = pdfmetrics.stringWidth(title_text, montserrat_bold, title_size_pt)
+    title_text = " ".join(title.upper()) if is_old_time_layout else title.upper()
+    pdf_canvas.setFont(title_font, title_size_pt)
+    title_width_pt = pdfmetrics.stringWidth(title_text, title_font, title_size_pt)
     pdf_canvas.drawString(center_x_pt - (title_width_pt / 2), title_y_pt, title_text)
 
     subtitle_text = subtitle.upper()
-    pdf_canvas.setFont(montserrat_medium, subtitle_size_pt)
-    subtitle_width_pt = pdfmetrics.stringWidth(subtitle_text, montserrat_medium, subtitle_size_pt)
+    pdf_canvas.setFont(subtitle_font, subtitle_size_pt)
+    subtitle_width_pt = pdfmetrics.stringWidth(subtitle_text, subtitle_font, subtitle_size_pt)
     pdf_canvas.drawString(center_x_pt - (subtitle_width_pt / 2), subtitle_y_pt, subtitle_text)
 
-    gap_pt = max(subtitle_width_pt * 0.06, pdfmetrics.stringWidth("MMM", montserrat_medium, subtitle_size_pt))
-    edge_margin_pt = layout.width_cm * 0.06 * cm
-    line_y_pt = subtitle_y_pt + (subtitle_size_pt * 0.45)
-    stroke_w_pt = layout.height_cm * 0.0018 * cm
-    left_margin_pt = layout.left_margin_cm * cm
-    right_margin_pt = page_width_pt - (layout.right_margin_cm * cm)
-    left_line_x1 = left_margin_pt + edge_margin_pt
-    left_line_x2 = center_x_pt - (subtitle_width_pt / 2) - gap_pt
-    right_line_x1 = center_x_pt + (subtitle_width_pt / 2) + gap_pt
-    right_line_x2 = right_margin_pt - edge_margin_pt
-    pdf_canvas.setLineWidth(stroke_w_pt)
-    if left_line_x2 > left_line_x1:
-        pdf_canvas.line(left_line_x1, line_y_pt, left_line_x2, line_y_pt)
-    if right_line_x2 > right_line_x1:
-        pdf_canvas.line(right_line_x1, line_y_pt, right_line_x2, line_y_pt)
+    if is_old_time_layout and "°" in subtitle_text and coordinate_font != subtitle_font:
+        pdf_canvas.setFont(coordinate_font, subtitle_size_pt)
+        subtitle_width_pt = pdfmetrics.stringWidth(subtitle_text, coordinate_font, subtitle_size_pt)
+        pdf_canvas.drawString(center_x_pt - (subtitle_width_pt / 2), subtitle_y_pt, subtitle_text)
+
+    if is_old_time_layout:
+        ornament_color = colors.HexColor(theme.custom_text_color)
+        pdf_canvas.setStrokeColor(ornament_color)
+        pdf_canvas.setFillColor(ornament_color)
+
+        star_text = "*"
+        star_size_pt = layout.height_cm * 0.014 * cm
+        pdf_canvas.setFont(subtitle_font, star_size_pt)
+        star_width_pt = pdfmetrics.stringWidth(star_text, subtitle_font, star_size_pt)
+        pdf_canvas.drawString(center_x_pt - (star_width_pt / 2), ornament_y_pt - (star_size_pt * 0.22), star_text)
+
+        stroke_w_pt = 2.0
+        edge_margin_pt = layout.width_cm * 0.12 * cm
+        star_gap_pt = max(layout.width_cm * 0.03 * cm, star_width_pt * 0.90)
+        left_margin_pt = layout.left_margin_cm * cm
+        right_margin_pt = page_width_pt - (layout.right_margin_cm * cm)
+        left_line_x1 = left_margin_pt + edge_margin_pt
+        left_line_x2 = center_x_pt - (star_width_pt / 2) - star_gap_pt
+        right_line_x1 = center_x_pt + (star_width_pt / 2) + star_gap_pt
+        right_line_x2 = right_margin_pt - edge_margin_pt
+        pdf_canvas.setLineWidth(stroke_w_pt)
+        if left_line_x2 > left_line_x1:
+            pdf_canvas.line(left_line_x1, ornament_y_pt, left_line_x2, ornament_y_pt)
+        if right_line_x2 > right_line_x1:
+            pdf_canvas.line(right_line_x1, ornament_y_pt, right_line_x2, ornament_y_pt)
+    else:
+        gap_pt = max(subtitle_width_pt * 0.06, pdfmetrics.stringWidth("MMM", subtitle_font, subtitle_size_pt))
+        edge_margin_pt = layout.width_cm * 0.06 * cm
+        line_y_pt = subtitle_y_pt + (subtitle_size_pt * 0.45)
+        stroke_w_pt = layout.height_cm * 0.0018 * cm
+        left_margin_pt = layout.left_margin_cm * cm
+        right_margin_pt = page_width_pt - (layout.right_margin_cm * cm)
+        left_line_x1 = left_margin_pt + edge_margin_pt
+        left_line_x2 = center_x_pt - (subtitle_width_pt / 2) - gap_pt
+        right_line_x1 = center_x_pt + (subtitle_width_pt / 2) + gap_pt
+        right_line_x2 = right_margin_pt - edge_margin_pt
+        pdf_canvas.setLineWidth(stroke_w_pt)
+        if left_line_x2 > left_line_x1:
+            pdf_canvas.line(left_line_x1, line_y_pt, left_line_x2, line_y_pt)
+        if right_line_x2 > right_line_x1:
+            pdf_canvas.line(right_line_x1, line_y_pt, right_line_x2, line_y_pt)
 
     pdf_canvas.showPage()
     pdf_canvas.save()
     return buffer.getvalue()
 
 
-def _svg_to_pdf_bytes(*, svg_path: Path, layout: PosterLayout) -> bytes:
+def _svg_to_pdf_bytes(*, svg_path: Path, layout: PosterLayout, prefer_cairo: bool = True) -> bytes:
     """Convert composed SVG to PDF bytes with optional cairo backend and stable fallback."""
-    if cairosvg is not None:
+    if prefer_cairo and cairosvg is not None:
         try:
             return cairosvg.svg2pdf(
                 url=str(svg_path),
