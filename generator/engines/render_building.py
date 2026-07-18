@@ -12,10 +12,11 @@ import geopandas as gpd
 import matplotlib.pyplot as plt
 import osmnx as ox
 import random
+from matplotlib import colors as mcolors
 
 from osmnx._errors import InsufficientResponseError
 
-from shapely.geometry import Point, box
+from shapely.geometry import Point, Polygon, MultiPolygon, box
 from shapely.ops import unary_union, polygonize
 
 from generator.specs import ProductSpec
@@ -60,6 +61,76 @@ def _classify_road(hw: str):
         return "minor"
 
     return "local"
+
+
+def _is_bridge_value(v) -> bool:
+    if isinstance(v, (list, tuple, set)):
+        return any(_is_bridge_value(item) for item in v)
+    if v is None:
+        return False
+    if isinstance(v, bool):
+        return v
+    s = str(v).strip().lower()
+    return s not in {"", "0", "false", "no", "none", "nan"}
+
+
+def _relative_luminance(color: str) -> float:
+    r, g, b = mcolors.to_rgb(color)
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def _rgb_distance(c1: str, c2: str) -> float:
+    r1, g1, b1 = mcolors.to_rgb(c1)
+    r2, g2, b2 = mcolors.to_rgb(c2)
+    return ((r1 - r2) ** 2 + (g1 - g2) ** 2 + (b1 - b2) ** 2) ** 0.5
+
+
+def _blend_towards(color: str, target: str, amount: float) -> str:
+    r, g, b = mcolors.to_rgb(color)
+    tr, tg, tb = mcolors.to_rgb(target)
+    a = max(0.0, min(1.0, amount))
+    return mcolors.to_hex((r + (tr - r) * a, g + (tg - g) * a, b + (tb - b) * a))
+
+
+def _bridge_color_for_style(palette_name: str, road_color: str, water_color: str) -> str:
+    style_overrides = {
+        "architect_sage": "#bfd4cf",
+        "warm_terracotta": "#f5e8d6",
+        "sandstone_beige": None,
+        "luxury_gold": "#111111",
+        "midnight_blue": "#183940",
+        "mono_black": "#e0e0e0",
+        "royal_purple": "#4b4779",
+    }
+
+    if palette_name in style_overrides:
+        override = style_overrides[palette_name]
+        return road_color if override is None else override
+
+    # Keep bridge close to style road color, but force stronger contrast vs water.
+    if _rgb_distance(road_color, water_color) >= 0.30:
+        return road_color
+    water_l = _relative_luminance(water_color)
+    target = "#FFFFFF" if water_l < 0.52 else "#111111"
+    return _blend_towards(road_color, target, 0.38)
+
+
+def _fill_polygon_holes(geom):
+    if geom is None or geom.is_empty:
+        return geom
+    if isinstance(geom, Polygon):
+        return Polygon(geom.exterior)
+    if isinstance(geom, MultiPolygon):
+        return MultiPolygon([Polygon(poly.exterior) for poly in geom.geoms])
+    return geom
+
+
+def _mask_out_water(gdf: gpd.GeoDataFrame, water_geom):
+    if gdf is None or len(gdf) == 0 or water_geom is None or water_geom.is_empty:
+        return gdf
+    clipped = gdf.copy()
+    clipped["geometry"] = clipped.geometry.apply(lambda geom: geom.difference(water_geom))
+    return clipped[~clipped.is_empty]
 
 
 def _plot_dotted_texture(
@@ -582,15 +653,8 @@ def render_map_building(
     # AUTOMATIC RIVER GREEN BELT
     # =============================================================================
 
-    if len(waterway_p) > 0 and not use_surface_texture:
-
-        river_green = gpd.GeoDataFrame(
-            geometry=[unary_union(waterway_p.geometry).buffer(25)],
-            crs=waterway_p.crs
-        )
-
-    else:
-        river_green = None
+    # Disabled: this overlay can create a visible mid-river band artifact.
+    river_green = None
 
     # =============================================================================
     # PLOT
@@ -624,18 +688,27 @@ def render_map_building(
             industrial_color = "#DADADA"
 
         # water
+        dissolved_water = None
+        water_mask_geom = None
         if len(water_p) > 0:
-            water_p.plot(
+            water_union = unary_union(water_p.geometry)
+            water_union = _fill_polygon_holes(water_union)
+            dissolved_water = gpd.GeoDataFrame(
+                geometry=[water_union],
+                crs=water_p.crs,
+            )
+            water_mask_geom = water_union
+            dissolved_water.plot(
                 ax=ax,
                 color=style_cfg.water,
-                edgecolor=style_cfg.water_edge,
-                linewidth=style_cfg.water_edge_width,
+                edgecolor="none",
+                linewidth=0,
                 zorder=1,
             )
             if use_surface_texture:
                 _plot_dotted_texture(
                     ax,
-                    water_p,
+                    dissolved_water,
                     spacing_m=10,
                     dot_size=17.0,
                     color="#3F6F8B",
@@ -644,20 +717,28 @@ def render_map_building(
                     rng=texture_rng,
                 )
 
-        skip_waterway_overlay = use_surface_texture and len(water_p) > 0
-
-        if len(waterway_p) > 0 and not skip_waterway_overlay:
-            waterway_p.plot(
+        # Waterway is used only as a fallback when no water polygons are present.
+        # Dissolving avoids inner seams from overlapping buffered centerlines.
+        if len(waterway_p) > 0 and dissolved_water is None:
+            waterway_union = unary_union(waterway_p.geometry)
+            waterway_union = _fill_polygon_holes(waterway_union)
+            waterway_fill = gpd.GeoDataFrame(
+                geometry=[waterway_union],
+                crs=waterway_p.crs,
+            )
+            waterway_fill = waterway_fill[~waterway_fill.is_empty]
+            water_mask_geom = waterway_union
+            waterway_fill.plot(
                 ax=ax,
                 color=style_cfg.water,
-                edgecolor=style_cfg.water_edge,
-                linewidth=style_cfg.water_edge_width,
+                edgecolor="none",
+                linewidth=0,
                 zorder=1,
             )
             if use_surface_texture:
                 _plot_dotted_texture(
                     ax,
-                    waterway_p,
+                    waterway_fill,
                     spacing_m=10,
                     dot_size=17.0,
                     color="#3F6F8B",
@@ -671,10 +752,12 @@ def render_map_building(
             coast_water.plot (
                 ax=ax,
                 color=style_cfg.water,
-                edgecolor=style_cfg.water_edge,
-                linewidth=style_cfg.water_edge_width,
+                edgecolor="none",
+                linewidth=0,
                 zorder=0,
             )
+            coast_union = unary_union(coast_water.geometry)
+            water_mask_geom = coast_union if water_mask_geom is None else unary_union([water_mask_geom, coast_union])
             if use_surface_texture:
                 _plot_dotted_texture(
                     ax,
@@ -688,6 +771,7 @@ def render_map_building(
                 )
 
         if len(beach_p) > 0:
+            beach_p = _mask_out_water(beach_p, water_mask_geom)
             beach_p.plot(
                 ax=ax,
                 color=beach_color,
@@ -697,6 +781,7 @@ def render_map_building(
             )
 
         if len(squares_p) > 0:
+            squares_p = _mask_out_water(squares_p, water_mask_geom)
             squares_p.plot(
                 ax=ax,
                 color="#D9CDB2" if use_surface_texture else style_cfg.background,
@@ -717,6 +802,7 @@ def render_map_building(
 
         # greens
         if draw_green_layers and len (greens_p) > 0:
+            greens_p = _mask_out_water(greens_p, water_mask_geom)
             greens_p.plot (
                 ax=ax,
                 color=style_cfg.green,
@@ -803,6 +889,7 @@ def render_map_building(
         # extra
         # cemetery
         if draw_green_layers and len (cemetery_p) > 0:
+            cemetery_p = _mask_out_water(cemetery_p, water_mask_geom)
             cemetery_p.plot (
                 ax=ax,
                 color=style_cfg.green,
@@ -812,13 +899,16 @@ def render_map_building(
             )
 
         if len(parking_p) > 0:
+            parking_p = _mask_out_water(parking_p, water_mask_geom)
             parking_p.plot(ax=ax, color=parking_color, edgecolor="none", zorder=3)
 
         if len(industrial_p) > 0:
+            industrial_p = _mask_out_water(industrial_p, water_mask_geom)
             industrial_p.plot(ax=ax, color=industrial_color, edgecolor="none", zorder=3)
 
     # buildings
     if len(buildings_p) > 0:
+        buildings_p = _mask_out_water(buildings_p, water_mask_geom if 'water_mask_geom' in locals() else None)
 
         palette = style_cfg.building_colors
 
@@ -881,6 +971,30 @@ def render_map_building(
                 color="#555555",
                 linewidth=1.2,
                 zorder=11,
+            )
+
+    # Draw bridges on top of water/buildings with style-specific contrast colors.
+    if "bridge" in edges_p.columns:
+        bridges = edges_p[edges_p["bridge"].apply(_is_bridge_value)]
+    else:
+        bridges = edges_p.iloc[0:0]
+
+    if len(bridges) > 0:
+        road_width_base = style_cfg.road_style.base_width
+        multipliers = style_cfg.road_style.multipliers
+        bridge_color = _bridge_color_for_style(palette_name, style_cfg.road, style_cfg.water)
+
+        for cls, mult in multipliers.items():
+            bridge_subset = bridges[bridges["road_class"] == cls]
+            if len(bridge_subset) == 0:
+                continue
+            bridge_subset.plot(
+                ax=ax,
+                color=bridge_color,
+                linewidth=(road_width_base * mult) * 1.15,
+                capstyle="round",
+                joinstyle="round",
+                zorder=12,
             )
 
     ax.set_xlim(minx, maxx)

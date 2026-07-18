@@ -78,23 +78,19 @@ STYLE_REGISTRY = {
     # LINE ENGINE STYLES
     # ---------------------------------------------------------
 
-    "bw_minimal": StyleDefinition(
+    "mp_terracotta": StyleDefinition(
         engine=EngineType.LINE,
     ),
 
-    "nordic_teal": StyleDefinition(
+    "mp_noir": StyleDefinition(
         engine=EngineType.LINE,
     ),
 
-    "blueprint": StyleDefinition(
+    "mp_blueprint": StyleDefinition(
         engine=EngineType.LINE,
     ),
 
-    "desert_sand": StyleDefinition(
-        engine=EngineType.LINE,
-    ),
-
-    "ivory_bw": StyleDefinition(
+    "mp_black_white": StyleDefinition(
         engine=EngineType.LINE,
     ),
 }
