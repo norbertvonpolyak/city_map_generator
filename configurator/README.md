@@ -5,7 +5,7 @@ This folder contains the architecture and UI foundation for the Universal Map Co
 Scope delivered so far:
 - React + TypeScript frontend foundation
 - Shared TypeScript types for future map modules
-- Module definitions for City Map, Building Map, and Star Map
+- Module definitions for City Map and Building Map
 - Premium split-layout shell with reusable configuration sections
 - JSON-oriented interfaces for future poster configuration documents
 - Interactive circular preview viewport with mock graphics
@@ -57,7 +57,6 @@ configurator/
       types.ts
       city-map.module.ts
       building-map.module.ts
-      star-map.module.ts
       definitions.ts
       index.ts
     schemas/
@@ -76,7 +75,7 @@ configurator/
 2. shared/modules
 - Static module contracts and defaults.
 - Exposes module metadata for UI composition and future registry logic.
-- Includes one definition each for City, Building, and Star modules.
+- Includes one definition each for City and Building modules.
 
 3. shared/schemas
 - JSON document interfaces for future saved poster configuration payloads.
@@ -109,7 +108,6 @@ Reusable sections:
 The phase-1 module contracts are static and typed:
 - city-map
 - building-map
-- star-map
 
 Each module definition includes:
 - display metadata
@@ -124,13 +122,13 @@ Preview responsibilities are split into two reusable components:
 - `ObjectsPanel`: placement tool selector and synchronized object list with selection and deletion actions.
 
 Product visualization mock layer:
-- `ModuleMockMapLayer`: renders distinct SVG placeholder visuals for `city-map`, `building-map`, and `star-map` so UX can be tested before backend map generation integration.
+- `ModuleMockMapLayer`: renders distinct SVG placeholder visuals for `city-map` and `building-map` so UX can be tested before backend map generation integration.
 
 Real city preview integration (Phase 4):
 - `POST /preview/city` returns `{ "svg": "..." }` for the city preview.
 - The frontend sends the current city text from the Location section and renders the returned SVG inside the circular viewport.
 - City preview uses the existing generator preview path in minimal style only.
-- Building and Star remain mock-only in this phase.
+- Building remains mock-only in this phase.
 
 Interactive data contracts are shared in `shared/types/interactive-preview.ts`:
 - `UMCPreviewObjectType`

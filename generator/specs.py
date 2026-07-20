@@ -27,7 +27,6 @@ DEFAULT_EXTENT_M = 5000  # félmagasság méterben (default)
 
 class ProductLine(str, Enum):
     CITYMAP = "citymap"
-    STARMAP = "starmap"
 
 
 def get_allowed_size_keys(product_line: ProductLine) -> List[str]:

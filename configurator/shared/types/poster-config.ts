@@ -35,16 +35,6 @@ export interface BuildingPosterConfig extends BasePosterConfig {
   }
 }
 
-export interface StarPosterConfig extends BasePosterConfig {
-  moduleKind: 'star-map'
-  star: {
-    dateIso: string
-    observerCity: string
-    skyStyle: 'constellation' | 'deep-sky' | 'minimal'
-  }
-}
-
 export type UMCPosterConfig =
   | CityPosterConfig
   | BuildingPosterConfig
-  | StarPosterConfig

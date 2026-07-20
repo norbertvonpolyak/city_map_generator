@@ -32,8 +32,6 @@ export interface ConfiguratorState {
   setTemplateId: (templateId: string) => void
   setPaletteId: (paletteId: string) => void
   setTypographyStyle: (typographyStyle: UMCPosterTypographyStyle) => void
-  setStarDateIso: (dateIso: string) => void
-  setStarSkyStyle: (skyStyle: 'constellation' | 'minimal') => void
   toggleObject: (key: keyof UMCPosterConfig['objects']) => void
   setPlacementType: (type: UMCPreviewObjectType) => void
   setPreviewViewport: (viewport: UMCPreviewViewportState) => void
@@ -216,36 +214,6 @@ export const useConfiguratorState = (): ConfiguratorState => {
       ...current,
       style: { ...current.style, typographyStyle },
     }))
-  }
-
-  const setStarDateIso = (dateIso: string) => {
-    setActiveConfig((current) => {
-      if (current.moduleKind !== 'star-map') {
-        return current
-      }
-      return {
-        ...current,
-        star: {
-          ...current.star,
-          dateIso,
-        },
-      }
-    })
-  }
-
-  const setStarSkyStyle = (skyStyle: 'constellation' | 'minimal') => {
-    setActiveConfig((current) => {
-      if (current.moduleKind !== 'star-map') {
-        return current
-      }
-      return {
-        ...current,
-        star: {
-          ...current.star,
-          skyStyle,
-        },
-      }
-    })
   }
 
   const toggleObject = (key: keyof UMCPosterConfig['objects']) => {

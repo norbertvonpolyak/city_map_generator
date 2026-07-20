@@ -191,10 +191,6 @@ export const InteractiveCircularViewport = ({
       return
     }
 
-    if (moduleKind === 'star-map') {
-      return
-    }
-
     const container = canvasRef.current
     if (!container) {
       return

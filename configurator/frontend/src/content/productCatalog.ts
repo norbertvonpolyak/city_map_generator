@@ -1,5 +1,5 @@
 export interface UMCProductTypeOption {
-  id: 'city-map' | 'star-map'
+  id: 'city-map'
   label: string
 }
 
@@ -30,7 +30,6 @@ export interface UMCPriceOption {
 
 export const umcProductTypes: UMCProductTypeOption[] = [
   { id: 'city-map', label: 'Várostérkép' },
-  { id: 'star-map', label: 'Csillagtérkép' },
 ]
 
 export const umcFrameOptions: UMCFrameOption[] = [
@@ -57,13 +56,6 @@ export const umcPaperOptions: UMCPaperOption[] = [
 export const umcPriceMatrix: UMCPriceOption[] = [
   {
     productTypeId: 'city-map',
-    frameId: 'wood-brown',
-    sizeId: '50x50',
-    paperId: 'premium-matte',
-    amountHuf: 9990,
-  },
-  {
-    productTypeId: 'star-map',
     frameId: 'wood-brown',
     sizeId: '50x50',
     paperId: 'premium-matte',

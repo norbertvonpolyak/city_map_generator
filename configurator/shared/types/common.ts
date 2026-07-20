@@ -1,4 +1,4 @@
-export type UMCModuleKind = 'city-map' | 'building-map' | 'star-map'
+export type UMCModuleKind = 'city-map' | 'building-map'
 
 export type UMCSectionId =
   | 'module-selector'

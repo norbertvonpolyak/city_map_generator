@@ -30,18 +30,3 @@ export const buildingPosterDocumentExample: PosterConfigEnvelope = {
     },
   },
 }
-
-export const starPosterDocumentExample: PosterConfigEnvelope = {
-  id: 'star-foundation-example',
-  slug: 'star-map-foundation',
-  document: {
-    schema: 'umc.poster-config',
-    version: '1.0.0',
-    module: 'star-map',
-    payload: umcModuleDefinitions['star-map'].defaults,
-    metadata: {
-      source: 'umc-foundation',
-      notes: 'Static reference payload for architecture phase.',
-    },
-  },
-}

@@ -43,8 +43,6 @@ interface ConfiguratorShellProps {
   onTemplateChange: (templateId: string) => void
   onPaletteChange: (paletteId: string) => void
   onTypographyStyleChange: (typographyStyle: UMCPosterTypographyStyle) => void
-  onStarDateChange: (dateIso: string) => void
-  onStarSkyStyleChange: (skyStyle: 'constellation' | 'minimal') => void
   onObjectToggle: (key: keyof UMCPosterConfig['objects']) => void
   previewViewport: UMCPreviewViewportState
   previewObjects: UMCPreviewObject[]
@@ -183,8 +181,6 @@ export const ConfiguratorShell = ({
   onTemplateChange,
   onPaletteChange,
   onTypographyStyleChange,
-  onStarDateChange,
-  onStarSkyStyleChange,
   onObjectToggle: _onObjectToggle,
   previewViewport,
   previewObjects,
@@ -272,7 +268,7 @@ export const ConfiguratorShell = ({
   const radiusStep = selectedCityStyle.radiusStep
   const markerCount = previewObjects.filter((item) => item.type !== 'text').length
   const textObjectCount = previewObjects.filter((item) => item.type === 'text').length
-  const resolvedPrice = resolveUmcPrice(isCityModule ? 'city-map' : 'star-map', frameOption, selectedSizeOption.id, paperOption.id)
+  const resolvedPrice = resolveUmcPrice('city-map', frameOption, selectedSizeOption.id, paperOption.id)
   const posterAspectRatio = selectedSizeOption.widthCm / selectedSizeOption.heightCm
   const shortSideCm = Math.min(selectedSizeOption.widthCm, selectedSizeOption.heightCm)
   const sideMarginCm = shortSideCm * 0.04
@@ -298,7 +294,7 @@ export const ConfiguratorShell = ({
 
   const selectedStyleLabel = useMemo(() => {
     if (!isCityModule) {
-      return huUiText.starMap
+      return huUiText.cityMap
     }
     return selectedCityStyle.name
   }, [isCityModule, selectedCityStyle.name])
@@ -543,12 +539,6 @@ export const ConfiguratorShell = ({
   }
 
   useEffect(() => {
-    if (activeModule === 'star-map' && placementType !== 'text') {
-      onPlacementTypeChange('text')
-    }
-  }, [activeModule, onPlacementTypeChange, placementType])
-
-  useEffect(() => {
     setTitleTouched(false)
     setSubtitleTouched(false)
     setCustomTextTouched(false)
@@ -607,10 +597,7 @@ export const ConfiguratorShell = ({
 
   const onSelectPosterType = (moduleKind: UMCModuleKind) => {
     onModuleChange(moduleKind)
-    if (moduleKind === 'star-map') {
-      onTemplateChange('stellar-classic')
-      onPaletteChange('nordic')
-    } else if (moduleKind === 'city-map') {
+    if (moduleKind === 'city-map') {
       onTemplateChange(defaultCityStyleId)
       onPaletteChange(defaultCityStyleId)
     }
@@ -650,17 +637,13 @@ export const ConfiguratorShell = ({
     setVisiblePaletteTooltipId(null)
   }
 
-  const selectedStarDate = activeConfig.moduleKind === 'star-map'
-    ? activeConfig.star.dateIso.slice(0, 10)
-    : new Date().toISOString().slice(0, 10)
-
   const stepSummaries = useMemo(() => {
     const locationLines = stepCompletion[3]
       ? [withCheck(activeConfig.location.query)]
       : [huUiText.summaryNotConfigured]
 
     const styleLines = [
-      withCheck(isCityModule ? huUiText.cityMap : huUiText.starMap),
+      withCheck(huUiText.cityMap),
     ]
 
     if (isCityModule) {
@@ -690,159 +673,67 @@ export const ConfiguratorShell = ({
     posterLines.push(withCheck(huUiText.summaryTypography(activeConfig.style.typographyStyle)))
 
     const objectLines = [
-      withCheck(huUiText.summaryObjects(markerCount)),
-      withCheck(huUiText.summaryLabels(textObjectCount)),
-    ]
-
-    return {
-      locationLines,
-      styleLines,
       kivitelLines,
       posterLines: posterLines.length > 0 ? posterLines : [huUiText.summaryNotConfigured],
-      objectLines,
-    }
-  }, [
-    activeConfig.location.query,
-    activeConfig.title,
-    frameOption,
-    isCityModule,
-    markerCount,
-    posterCustomText,
-    posterDateText,
-    posterSubtitle,
-    printSizeId,
-    selectedSizeOption,
-    activeConfig.style.typographyStyle,
-    resolvedPrice,
-    selectedStyleLabel,
-    stepCompletion,
-    textObjectCount,
-  ])
-
-  return (
-    <div className="umc-app-shell">
-      <aside className="umc-sidebar">
-        <header className="umc-sidebar-header">
-          <p>{huUiText.brand}</p>
-          <h1>{huUiText.heroSubtitle}</h1>
-        </header>
-
-        <StepCard
-          number={1}
-          title={huUiText.stepStyle}
-          open={activeStep === 1}
-          summaryLines={stepSummaries.styleLines}
-          onToggle={() => onToggleStep(1)}
-        >
-          <div className="umc-type-switch">
-            <button
-              type="button"
-              onClick={() => onSelectPosterType('city-map')}
-              className={isCityModule ? 'umc-switch-active' : ''}
-            >
-              {huUiText.cityMap}
-            </button>
-            <button
-              type="button"
-              onClick={() => onSelectPosterType('star-map')}
-              className={!isCityModule ? 'umc-switch-active' : ''}
-            >
-              {huUiText.starMap}
-            </button>
-          </div>
-
-          {isCityModule ? (
-            <>
-              <div className="umc-style-tier-stack">
-                <section className="umc-style-tier-card" aria-label="Map style section">
-                  <p className="umc-style-tier-title">Map Style</p>
-                  <div className="umc-main-style-grid">
-                    {cityStyleFamilies.map((family) => (
-                      <button
-                        key={family.id}
-                        type="button"
-                        className={activeCityFamily.id === family.id ? 'umc-main-style-card umc-main-style-card-active' : 'umc-main-style-card'}
-                        onClick={() => {
-                          setActiveCityFamilyId(family.id)
-                          const fallbackStyleId = family.paletteIds[0]
-                          if (!family.paletteIds.includes(selectedCityStyle.id)) {
-                            selectCityStyle(fallbackStyleId)
-                          }
-                        }}
-                        aria-label={`${family.name} - ${family.description}`}
-                      >
-                        <div className={family.thumbnailClass} />
-                        <strong>{family.name}</strong>
-                      </button>
-                    ))}
-                  </div>
-                </section>
-
-                <section className="umc-style-tier-card" aria-label="Color palette section">
-                  <p className="umc-style-tier-title">Color Palette</p>
-                  <div className="umc-style-grid">
-                    {activeCityFamilyPalettes.map((option) => (
-                      <button
-                        key={option.id}
-                        type="button"
-                        className={`${activeConfig.style.paletteId === option.id ? 'umc-style-card umc-style-card-active' : 'umc-style-card'} umc-rich-tooltip${visiblePaletteTooltipId === option.id ? ' umc-rich-tooltip-visible' : ''}`}
-                        onClick={() => selectCityStyle(option.id)}
-                        onPointerEnter={() => onPaletteTooltipEnter(option.id)}
-                        onPointerMove={() => onPaletteTooltipMove(option.id)}
-                        onPointerLeave={onPaletteTooltipLeave}
-                        onFocus={() => setVisiblePaletteTooltipId(option.id)}
-                        onBlur={onPaletteTooltipLeave}
-                        data-tooltip={option.description}
-                        aria-label={`${option.name} - ${option.description}`}
-                      >
-                        <div className="umc-style-preview-image-frame">
-                          <img
-                            src={`/city-placeholders/${activeCityFamily.id}/${option.id}_${selectedSizeOption.id}.png`}
-                            alt=""
-                            className="umc-style-preview-image"
-                            loading="lazy"
-                          />
-                        </div>
-                        <strong className="umc-color-style-title">{option.name}</strong>
-                        {activeConfig.style.paletteId === option.id ? (
-                          <span className="umc-style-card-checkmark" aria-hidden="true">✓</span>
-                        ) : null}
-                      </button>
-                    ))}
-                  </div>
-                </section>
+          <div className="umc-style-tier-stack">
+            <section className="umc-style-tier-card" aria-label="Map style section">
+              <p className="umc-style-tier-title">Map Style</p>
+              <div className="umc-main-style-grid">
+                {cityStyleFamilies.map((family) => (
+                  <button
+                    key={family.id}
+                    type="button"
+                    className={activeCityFamily.id === family.id ? 'umc-main-style-card umc-main-style-card-active' : 'umc-main-style-card'}
+                    onClick={() => {
+                      setActiveCityFamilyId(family.id)
+                      const fallbackStyleId = family.paletteIds[0]
+                      if (!family.paletteIds.includes(selectedCityStyle.id)) {
+                        selectCityStyle(fallbackStyleId)
+                      }
+                    }}
+                    aria-label={`${family.name} - ${family.description}`}
+                  >
+                    <div className={family.thumbnailClass} />
+                    <strong>{family.name}</strong>
+                  </button>
+                ))}
               </div>
-            </>
-          ) : (
-            <>
-              <label className="umc-field-label" htmlFor="event-date">{huUiText.eventDate}</label>
-              <input
-                id="event-date"
-                type="date"
-                value={selectedStarDate}
-                onChange={(event) => onStarDateChange(`${event.target.value}T20:00:00.000Z`)}
-                className="umc-input"
-              />
-              <p className="umc-field-label">{huUiText.displayMode}</p>
-              <label className="umc-radio-item">
-                <input
-                  type="radio"
-                  name="sky-display"
-                  checked={activeConfig.moduleKind === 'star-map' && activeConfig.star.skyStyle === 'minimal'}
-                  onChange={() => onStarSkyStyleChange('minimal')}
-                />
-                {huUiText.gridMode}
-              </label>
-              <label className="umc-radio-item">
-                <input
-                  type="radio"
-                  name="sky-display"
-                  checked={activeConfig.moduleKind === 'star-map' && activeConfig.star.skyStyle === 'constellation'}
-                  onChange={() => onStarSkyStyleChange('constellation')}
-                />
-                {huUiText.constellationMode}
-              </label>
-            </>
+            </section>
+
+            <section className="umc-style-tier-card" aria-label="Color palette section">
+              <p className="umc-style-tier-title">Color Palette</p>
+              <div className="umc-style-grid">
+                {activeCityFamilyPalettes.map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    className={`${activeConfig.style.paletteId === option.id ? 'umc-style-card umc-style-card-active' : 'umc-style-card'} umc-rich-tooltip${visiblePaletteTooltipId === option.id ? ' umc-rich-tooltip-visible' : ''}`}
+                    onClick={() => selectCityStyle(option.id)}
+                    onPointerEnter={() => onPaletteTooltipEnter(option.id)}
+                    onPointerMove={() => onPaletteTooltipMove(option.id)}
+                    onPointerLeave={onPaletteTooltipLeave}
+                    onFocus={() => setVisiblePaletteTooltipId(option.id)}
+                    onBlur={onPaletteTooltipLeave}
+                    data-tooltip={option.description}
+                    aria-label={`${option.name} - ${option.description}`}
+                  >
+                    <div className="umc-style-preview-image-frame">
+                      <img
+                        src={`/city-placeholders/${activeCityFamily.id}/${option.id}_${selectedSizeOption.id}.png`}
+                        alt=""
+                        className="umc-style-preview-image"
+                        loading="lazy"
+                      />
+                    </div>
+                    <strong className="umc-color-style-title">{option.name}</strong>
+                    {activeConfig.style.paletteId === option.id ? (
+                      <span className="umc-style-card-checkmark" aria-hidden="true">✓</span>
+                    ) : null}
+                  </button>
+                ))}
+              </div>
+            </section>
+          </div>
           )}
         </StepCard>
 
@@ -1102,7 +993,7 @@ export const ConfiguratorShell = ({
           dateTextAppearance={textAppearanceByField.date}
           customTextAppearance={textAppearanceByField.custom}
           typographyStyle={activeConfig.style.typographyStyle}
-          styleSummary={isCityModule ? `${huUiText.cityMap} • ${selectedStyleLabel}` : huUiText.starMap}
+          styleSummary={`${huUiText.cityMap} • ${selectedStyleLabel}`}
           viewport={previewViewport}
           placementType={placementType}
           selectedObjectId={selectedObjectId}

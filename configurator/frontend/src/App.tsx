@@ -13,8 +13,6 @@ function App() {
     setTemplateId,
     setPaletteId,
     setTypographyStyle,
-    setStarDateIso,
-    setStarSkyStyle,
     toggleObject,
     previewViewport,
     previewObjects,
@@ -48,8 +46,6 @@ function App() {
       onTemplateChange={setTemplateId}
       onPaletteChange={setPaletteId}
       onTypographyStyleChange={setTypographyStyle}
-      onStarDateChange={setStarDateIso}
-      onStarSkyStyleChange={setStarSkyStyle}
       onObjectToggle={toggleObject}
       previewViewport={previewViewport}
       previewObjects={previewObjects}

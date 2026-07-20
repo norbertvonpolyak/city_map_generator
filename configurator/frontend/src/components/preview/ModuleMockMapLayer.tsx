@@ -97,43 +97,27 @@ export const ModuleMockMapLayer = ({ moduleKind }: ModuleMockMapLayerProps) => {
   return (
     <svg viewBox="0 0 1000 1000" className="absolute inset-0 h-full w-full" aria-hidden="true">
       <defs>
-        <radialGradient id="starNebula" cx="50%" cy="50%" r="60%">
-          <stop offset="0%" stopColor="rgba(126,235,226,0.26)" />
-          <stop offset="55%" stopColor="rgba(126,235,226,0.06)" />
-          <stop offset="100%" stopColor="rgba(4,6,10,0)" />
-        </radialGradient>
+        <linearGradient id="neutralGlow" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="rgba(201,171,120,0.20)" />
+          <stop offset="100%" stopColor="rgba(126,235,226,0.08)" />
+        </linearGradient>
       </defs>
       <rect x="0" y="0" width="1000" height="1000" fill="rgba(5,8,13,0.55)" />
-      <circle cx="500" cy="500" r="380" fill="url(#starNebula)" />
-      <g fill="none" stroke="rgba(201,171,120,0.22)" strokeWidth="2">
-        <path d="M180 300 L310 260 L430 330 L560 280 L690 340 L820 290" />
-        <path d="M240 610 L350 540 L500 580 L640 520 L760 590" />
+      <circle cx="500" cy="500" r="360" fill="url(#neutralGlow)" />
+      <g fill="none" stroke="rgba(233,226,212,0.18)" strokeWidth="2">
+        <path d="M160 280 L320 250 L470 320 L610 270 L780 320" />
+        <path d="M210 610 L360 560 L520 590 L680 540 L820 590" />
+        <path d="M240 180 L240 820" />
+        <path d="M420 150 L420 850" />
+        <path d="M620 170 L620 830" />
       </g>
-      <g fill="rgba(233,226,212,0.62)">
-        <circle cx="180" cy="300" r="4" />
-        <circle cx="310" cy="260" r="3" />
-        <circle cx="430" cy="330" r="4" />
-        <circle cx="560" cy="280" r="3" />
-        <circle cx="690" cy="340" r="4" />
-        <circle cx="820" cy="290" r="3" />
-        <circle cx="240" cy="610" r="4" />
-        <circle cx="350" cy="540" r="3" />
-        <circle cx="500" cy="580" r="4" />
-        <circle cx="640" cy="520" r="3" />
-        <circle cx="760" cy="590" r="4" />
-      </g>
-      <g fill="rgba(233,226,212,0.45)">
-        <circle cx="160" cy="170" r="2" />
-        <circle cx="260" cy="210" r="1.8" />
-        <circle cx="360" cy="160" r="1.6" />
-        <circle cx="570" cy="170" r="1.9" />
-        <circle cx="760" cy="190" r="1.7" />
-        <circle cx="840" cy="160" r="2" />
-        <circle cx="170" cy="790" r="1.8" />
-        <circle cx="300" cy="860" r="1.7" />
-        <circle cx="480" cy="820" r="2" />
-        <circle cx="700" cy="850" r="1.8" />
-        <circle cx="820" cy="780" r="1.6" />
+      <g fill="rgba(233,226,212,0.42)">
+        <circle cx="180" cy="300" r="3" />
+        <circle cx="310" cy="260" r="2.5" />
+        <circle cx="430" cy="330" r="3" />
+        <circle cx="560" cy="280" r="2.5" />
+        <circle cx="690" cy="340" r="3" />
+        <circle cx="820" cy="290" r="2.5" />
       </g>
     </svg>
   )
