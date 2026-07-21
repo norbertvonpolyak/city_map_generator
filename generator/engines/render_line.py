@@ -6,6 +6,7 @@ matplotlib.use("Agg")
 from dataclasses import dataclass
 from typing import Optional
 from pathlib import Path
+import warnings
 
 import geopandas as gpd
 import matplotlib.pyplot as plt
@@ -13,6 +14,7 @@ import numpy as np
 import osmnx as ox
 import random
 from matplotlib import colors as mcolors
+from PIL import Image
 
 from shapely.geometry import Point, box
 
@@ -164,6 +166,43 @@ def _blend_towards(color: str, target: str, amount: float) -> str:
     return mcolors.to_hex((r + (tr - r) * a, g + (tg - g) * a, b + (tb - b) * a))
 
 
+def _build_fallback_paper_texture(height: int = 1200, width: int = 900) -> np.ndarray:
+    """Create a subtle warm paper-like texture when no texture image file is available."""
+    rng = np.random.default_rng(42)
+    base = np.array([246, 239, 228], dtype=np.float32)
+
+    # Fine grain and broad cloud-like variation for a vintage paper feel.
+    fine = rng.normal(loc=0.0, scale=8.0, size=(height, width, 1)).astype(np.float32)
+    cloud_small = rng.normal(loc=0.0, scale=1.0, size=(height // 10 + 2, width // 10 + 2, 1)).astype(np.float32)
+    cloud = np.kron(cloud_small, np.ones((10, 10, 1), dtype=np.float32))[:height, :width, :]
+
+    texture = base + fine + (cloud * 6.0)
+    return np.clip(texture, 0, 255).astype(np.uint8)
+
+
+def _cover_crop_to_aspect(image: Image.Image, target_aspect: float) -> Image.Image:
+    """Center-crop image to target aspect ratio (cover behavior, no distortion)."""
+    if target_aspect <= 0:
+        return image
+
+    width, height = image.size
+    if width <= 0 or height <= 0:
+        return image
+
+    current_aspect = width / height
+    if abs(current_aspect - target_aspect) < 1e-6:
+        return image
+
+    if current_aspect > target_aspect:
+        new_width = int(round(height * target_aspect))
+        left = max((width - new_width) // 2, 0)
+        return image.crop((left, 0, left + new_width, height))
+
+    new_height = int(round(width / target_aspect))
+    top = max((height - new_height) // 2, 0)
+    return image.crop((0, top, width, top + new_height))
+
+
 # ---------------------------------------------------------------------------
 # MAIN LINE ENGINE
 # ---------------------------------------------------------------------------
@@ -183,6 +222,8 @@ def render_map_line(
     filename_prefix: str = "map_layer_line",
     preview_mode: bool = False,
     use_cache: bool = True,
+    draw_background_texture: bool = True,
+    transparent_map_background: bool = False,
 ) -> MapLayerResult:
 
     style_cfg = get_style_config(palette_name)
@@ -288,13 +329,17 @@ def render_map_line(
             "green_p": green_p,
         }
 
+    cache_variant = (
+        f"geom_v3_hw{int(round(half_width_m))}_hh{int(round(half_height_m))}"
+    )
+
     geometry_data = (
         load_or_build_geometry(
             cache_prefix="line_maptoposter",
             center_lat=center_lat,
             center_lon=center_lon,
             extent_m=extent_m,
-            cache_variant="geom_v2",
+            cache_variant=cache_variant,
             builder_func=_build_geometry,
         )
         if use_cache
@@ -310,11 +355,49 @@ def render_map_line(
     # -----------------------------------------------------------------------
 
     fig, ax = plt.subplots(figsize=(fig_w_in, fig_h_in))
+    target_aspect = (maxx - minx) / (maxy - miny)
 
     render_cfg = style_cfg.render
     effective_road_widths = _resolve_effective_line_widths(render_cfg.road_widths, extent_m)
-    fig.patch.set_facecolor(render_cfg.background)
-    ax.set_facecolor(render_cfg.background)
+    if transparent_map_background:
+        fig.patch.set_alpha(0.0)
+        ax.set_facecolor("none")
+    else:
+        fig.patch.set_facecolor(render_cfg.background)
+        ax.set_facecolor(render_cfg.background)
+
+    # Optional texture overlay for paper-like backgrounds.
+    if draw_background_texture and render_cfg.background_texture_path:
+        texture_path = Path(render_cfg.background_texture_path)
+        if not texture_path.is_absolute():
+            project_root = Path(__file__).resolve().parents[2]
+            texture_path = project_root / texture_path
+
+        texture_opacity = max(0.0, min(1.0, float(render_cfg.background_texture_opacity)))
+        if texture_path.exists():
+            if texture_opacity > 0.0:
+                with Image.open(texture_path) as texture_img:
+                    texture_rgb = _cover_crop_to_aspect(texture_img.convert("RGB"), target_aspect)
+                    ax.imshow(
+                        texture_rgb,
+                        extent=(minx, maxx, miny, maxy),
+                        interpolation="bilinear",
+                        alpha=texture_opacity,
+                        zorder=0,
+                    )
+        elif texture_opacity > 0.0:
+            warnings.warn(
+                f"Texture file not found for style '{palette_name}': {texture_path}. Using procedural paper texture.",
+                RuntimeWarning,
+            )
+            fallback_texture = _build_fallback_paper_texture()
+            ax.imshow(
+                fallback_texture,
+                extent=(minx, maxx, miny, maxy),
+                interpolation="bilinear",
+                alpha=texture_opacity,
+                zorder=0,
+            )
 
     water_lum = _relative_luminance(render_cfg.water)
     water_edge_target = "#F6F4EF" if water_lum < 0.55 else "#3A3A3A"
@@ -423,6 +506,7 @@ def render_map_line(
             output_path,
             format="svg",
             pad_inches=0,
+            transparent=transparent_map_background,
         )
 
     plt.close(fig)

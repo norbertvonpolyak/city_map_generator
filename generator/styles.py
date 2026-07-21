@@ -64,6 +64,8 @@ class MaptoposterLineRenderConfig:
     parks: str
     road_colors: Dict[str, str]
     road_widths: Dict[str, float]
+    background_texture_path: str | None = None
+    background_texture_opacity: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -71,6 +73,7 @@ class MaptoposterLineLayoutConfig:
     uniform_margins: bool = True
     bottom_margin_ratio: float | None = None
     passepartout_color: str = "#F6F3EE"
+    passepartout_opacity: float = 1.0
     bottom_fade_color: str = "#F6F3EE"
     title_color: str = "#1C1C1C"
     subtitle_color: str = "#1C1C1C"
@@ -81,6 +84,8 @@ class MaptoposterLineLayoutConfig:
     body_font_family: str = "Montserrat-Medium"
     bottom_fade: bool = False
     center_title: bool = False
+    inner_border_color: str | None = None
+    inner_border_width_px: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -415,27 +420,28 @@ STYLES = {
 
     "mp_terracotta": MaptoposterLineStyleConfig(
         render=MaptoposterLineRenderConfig(
-            background="#F5EDE4",
-            text="#8B4513",
-            water="#A8C4C4",
-            parks="#DBD3C3",
+            background="#FBF6EF",
+            text="#4A3B30",
+            water="#83DBC5",
+            parks="#B2BEAA",
+
             road_colors={
-                "motorway": "#86472A",
-                "trunk": "#A0522D",
-                "primary": "#A0522D",
-                "secondary": "#A0522D",
-                "tertiary": "#D9A08A",
-                "residential": "#E5C4B0",
-                "default": "#9E9D9D",
+                "motorway": "#8B3E23",
+                "trunk": "#B55A37",
+                "primary": "#B55A37",
+                "secondary": "#B55A37",
+                "tertiary": "#B55A37",
+                "residential": "#72625C",
+                "default": "#928F8D",
             },
             road_widths={
-                "motorway": 3.2,
-                "trunk": 3.0,
-                "primary": 3.0,
-                "secondary": 3.0,
-                "tertiary": 2.15,
+                "motorway": 5.2,
+                "trunk": 4.3,
+                "primary": 4.3,
+                "secondary": 3.7,
+                "tertiary": 3.15,
                 "residential": 1.2,
-                "default": 0.90,
+                "default": 0.9,
             },
         ),
         layout=MaptoposterLineLayoutConfig(
@@ -453,25 +459,25 @@ STYLES = {
         render=MaptoposterLineRenderConfig(
             background="#000000",
             text="#FFFFFF",
-            water="#0A0A0A",
-            parks="#111111",
+            water="#5C5C5C",
+            parks="#272727",
             road_colors={
                 "motorway": "#E6E6E6",
                 "trunk": "#E6E6E6",
                 "primary": "#E6E6E6",
                 "secondary": "#E9E9E9",
-                "tertiary": "#808080",
-                "residential": "#505050",
+                "tertiary": "#DFDFDF",
+                "residential": "#A1A1A1",
                 "default": "#808080",
             },
             road_widths={
-                "motorway": 3.2,
-                "trunk": 3.0,
-                "primary": 3.0,
-                "secondary": 3.0,
-                "tertiary": 2.15,
-                "residential": 1.2,
-                "default": 0.90,
+                "motorway": 5.2,
+                "trunk": 4.0,
+                "primary": 4.0,
+                "secondary": 3.7,
+                "tertiary": 3.15,
+                "residential": 1.5,
+                "default": 1.2,
             },
         ),
         layout=MaptoposterLineLayoutConfig(
@@ -489,8 +495,8 @@ STYLES = {
         render=MaptoposterLineRenderConfig(
             background="#1A3A5C",
             text="#E8F4FF",
-            water="#0F2840",
-            parks="#1E4570",
+            water="#CAB246",
+            parks="#4B5A53",
             road_colors={
                 "motorway": "#E8F4FF",
                 "trunk": "#E8F4FF",
@@ -501,13 +507,13 @@ STYLES = {
                 "default": "#7BAED4",
             },
             road_widths={
-                "motorway": 3.2,
-                "trunk": 3.0,
-                "primary": 3.0,
-                "secondary": 3.0,
-                "tertiary": 2.15,
-                "residential": 1.2,
-                "default": 0.90,
+                "motorway": 5.2,
+                "trunk": 4.0,
+                "primary": 4.0,
+                "secondary": 3.7,
+                "tertiary": 3.15,
+                "residential": 1.5,
+                "default": 1.2,
             },
         ),
         layout=MaptoposterLineLayoutConfig(
@@ -523,37 +529,45 @@ STYLES = {
 
     "mp_black_white": MaptoposterLineStyleConfig(
         render=MaptoposterLineRenderConfig(
-            background="#FFFFFF",
-            text="#2C2C2C",
-            water="#D1D1D1",
-            parks="#ECECEC",
+            background="#FCFCFB",
+            text="#2B2B2B",
+
+            water="#EFEFEF",
+            parks="#F3F3F3",
+
             road_colors={
-                "motorway": "#535353",
-                "trunk": "#535353",
-                "primary": "#535353",
-                "secondary": "#535353",
-                "tertiary": "#A0A0A0",
-                "residential": "#C6C6C6",
-                "default": "#DDDDDD",
+                "motorway": "#3B3B3B",
+                "trunk": "#4A4A4A",
+                "primary": "#4A4A4A",
+                "secondary": "#4A4A4A",
+                "tertiary": "#4A4A4A",
+                "residential": "#838282",
+                "default": "#838282",
             },
+
             road_widths={
-                "motorway": 3.2,
-                "trunk": 3.0,
-                "primary": 3.0,
-                "secondary": 3.0,
-                "tertiary": 2.15,
-                "residential": 1.2,
-                "default": 0.90,
+                "motorway": 5.0,
+                "trunk": 4.0,
+                "primary": 3.3,
+                "secondary": 2.6,
+                "tertiary": 1.8,
+                "residential": 1.1,
+                "default": 0.8,
             },
+            background_texture_path="assets/textures/mp_black_white_paper.jpg",
+            background_texture_opacity=0.7,
         ),
         layout=MaptoposterLineLayoutConfig(
             uniform_margins=True,
             passepartout_color="#FFFFFF",
+            passepartout_opacity=0.0,
             bottom_fade_color="#FFFFFF",
             title_color="#2C2C2C",
             subtitle_color="#2C2C2C",
             coordinates_color="#2C2C2C",
             custom_text_color="#2C2C2C",
+            inner_border_color="#8B6B4A",
+            inner_border_width_px=4.0,
         ),
     ),
 }

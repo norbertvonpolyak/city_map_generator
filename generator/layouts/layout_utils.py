@@ -91,6 +91,9 @@ class PosterTheme:
     title_font_family: str
     subtitle_font_family: str
     body_font_family: str
+    passepartout_opacity: float = 1.0
+    background_texture_path: Optional[str] = None
+    background_texture_opacity: float = 0.0
     bottom_fade_color: Optional[str] = None
     title_scale: float = 0.42
     subtitle_scale: float = 0.30
@@ -105,6 +108,53 @@ class PosterTheme:
     bottom_fade: bool = False
     center_title: bool = False
     block_engine_layout: bool = False
+    inner_border_color: Optional[str] = None
+    inner_border_width_px: float = 0.0
+
+
+def _resolve_texture_path(texture_path: str) -> Path:
+    path = Path(texture_path)
+    if path.is_absolute():
+        return path
+    return Path(__file__).resolve().parents[2] / path
+
+
+def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
+    value = hex_color.strip().lstrip("#")
+    if len(value) != 6:
+        return (255, 255, 255)
+    return (int(value[0:2], 16), int(value[2:4], 16), int(value[4:6], 16))
+
+
+def _build_image_data_uri(
+    image_path: Path,
+    *,
+    opacity: float = 1.0,
+    background_color: str = "#FFFFFF",
+) -> Optional[str]:
+    if not image_path.exists():
+        return None
+
+    suffix = image_path.suffix.lower()
+    if suffix in {".jpg", ".jpeg"}:
+        mime = "image/jpeg"
+    elif suffix == ".webp":
+        mime = "image/webp"
+    else:
+        mime = "image/png"
+
+    with Image.open(image_path) as img:
+        rgb = img.convert("RGB")
+        resolved_opacity = max(0.0, min(1.0, float(opacity)))
+        if resolved_opacity < 0.999:
+            bg_rgb = _hex_to_rgb(background_color)
+            bg = Image.new("RGB", rgb.size, bg_rgb)
+            rgb = Image.blend(bg, rgb, resolved_opacity)
+        buffer = BytesIO()
+        save_format = "JPEG" if mime == "image/jpeg" else ("WEBP" if mime == "image/webp" else "PNG")
+        rgb.save(buffer, format=save_format)
+
+    return f"data:{mime};base64," + base64.b64encode(buffer.getvalue()).decode("ascii")
 
 
 @dataclass(frozen=True)
@@ -237,23 +287,36 @@ def _append_svg_text(
     node.text = text
 
 
-def _append_passepartout(svg_root: ET.Element, layout: PosterLayout, color: str, bottom_fade: bool = False, fade_color: Optional[str] = None) -> None:
+def _append_passepartout(
+    svg_root: ET.Element,
+    layout: PosterLayout,
+    color: str,
+    opacity: float = 1.0,
+    bottom_fade: bool = False,
+    fade_color: Optional[str] = None,
+    inner_border_color: Optional[str] = None,
+    inner_border_width_px: float = 0.0,
+) -> None:
     overlay = ET.SubElement(svg_root, f"{{{SVG_NS}}}g", {"id": "passepartout-layer"})
     resolved_fade_color = fade_color or color
+    resolved_opacity = max(0.0, min(1.0, float(opacity)))
+    draw_matte = resolved_opacity > 0.001
 
     # Top strip
-    ET.SubElement(overlay, f"{{{SVG_NS}}}rect", {
-        "x": "0",
-        "y": "0",
-        "width": f"{layout.width_cm:.4f}",
-        "height": f"{layout.top_margin_cm:.4f}",
-        "fill": color,
-        "stroke": "none",
-    })
+    if draw_matte:
+        ET.SubElement(overlay, f"{{{SVG_NS}}}rect", {
+            "x": "0",
+            "y": "0",
+            "width": f"{layout.width_cm:.4f}",
+            "height": f"{layout.top_margin_cm:.4f}",
+            "fill": color,
+            "fill-opacity": f"{resolved_opacity:.4f}",
+            "stroke": "none",
+        })
 
     # Bottom: use an embedded raster alpha gradient to avoid visible banding
     # while staying compatible with svglib/reportlab image rendering.
-    if bottom_fade:
+    if draw_matte and bottom_fade:
         fade_height = layout.height_cm * 0.10
         fade_y = layout.height_cm - layout.bottom_margin_cm - fade_height
         img_w = 32
@@ -281,35 +344,51 @@ def _append_passepartout(svg_root: ET.Element, layout: PosterLayout, color: str,
             "preserveAspectRatio": "none",
             "href": data_uri,
         })
-    else:
+    elif draw_matte:
         ET.SubElement(overlay, f"{{{SVG_NS}}}rect", {
             "x": "0",
             "y": f"{layout.height_cm - layout.bottom_margin_cm:.4f}",
             "width": f"{layout.width_cm:.4f}",
             "height": f"{layout.bottom_margin_cm:.4f}",
             "fill": color,
+            "fill-opacity": f"{resolved_opacity:.4f}",
             "stroke": "none",
         })
 
     # Side strips stop at the map area's bottom edge so the lower passepartout stays open for the fade zone.
     side_bottom_y = layout.height_cm - layout.bottom_margin_cm if bottom_fade else layout.height_cm - layout.bottom_margin_cm
     side_height = side_bottom_y - layout.top_margin_cm
-    ET.SubElement(overlay, f"{{{SVG_NS}}}rect", {
-        "x": "0",
-        "y": f"{layout.top_margin_cm:.4f}",
-        "width": f"{layout.left_margin_cm:.4f}",
-        "height": f"{side_height:.4f}",
-        "fill": color,
-        "stroke": "none",
-    })
-    ET.SubElement(overlay, f"{{{SVG_NS}}}rect", {
-        "x": f"{layout.width_cm - layout.right_margin_cm:.4f}",
-        "y": f"{layout.top_margin_cm:.4f}",
-        "width": f"{layout.right_margin_cm:.4f}",
-        "height": f"{side_height:.4f}",
-        "fill": color,
-        "stroke": "none",
-    })
+    if draw_matte:
+        ET.SubElement(overlay, f"{{{SVG_NS}}}rect", {
+            "x": "0",
+            "y": f"{layout.top_margin_cm:.4f}",
+            "width": f"{layout.left_margin_cm:.4f}",
+            "height": f"{side_height:.4f}",
+            "fill": color,
+            "fill-opacity": f"{resolved_opacity:.4f}",
+            "stroke": "none",
+        })
+        ET.SubElement(overlay, f"{{{SVG_NS}}}rect", {
+            "x": f"{layout.width_cm - layout.right_margin_cm:.4f}",
+            "y": f"{layout.top_margin_cm:.4f}",
+            "width": f"{layout.right_margin_cm:.4f}",
+            "height": f"{side_height:.4f}",
+            "fill": color,
+            "fill-opacity": f"{resolved_opacity:.4f}",
+            "stroke": "none",
+        })
+
+    if inner_border_color and inner_border_width_px > 0:
+        inner_border_width_cm = float(inner_border_width_px) * 2.54 / 96.0
+        ET.SubElement(overlay, f"{{{SVG_NS}}}rect", {
+            "x": f"{layout.map_box.x_cm:.4f}",
+            "y": f"{_svg_box_top_y(layout, layout.map_box):.4f}",
+            "width": f"{layout.map_box.width_cm:.4f}",
+            "height": f"{layout.map_box.height_cm:.4f}",
+            "fill": "none",
+            "stroke": inner_border_color,
+            "stroke-width": f"{inner_border_width_cm:.4f}",
+        })
 
 
 @dataclass(frozen=True)
@@ -868,6 +947,24 @@ def _compose_svg_document(
         "id": "background-layer",
     })
 
+    if theme.background_texture_path and theme.background_texture_opacity > 0:
+        resolved_texture_path = _resolve_texture_path(theme.background_texture_path)
+        data_uri = _build_image_data_uri(
+            resolved_texture_path,
+            opacity=theme.background_texture_opacity,
+            background_color=theme.background_color,
+        )
+        if data_uri:
+            ET.SubElement(svg_root, f"{{{SVG_NS}}}image", {
+                "x": "0",
+                "y": "0",
+                "width": f"{layout.width_cm:.4f}",
+                "height": f"{layout.height_cm:.4f}",
+                "preserveAspectRatio": "xMidYMid slice",
+                "href": data_uri,
+                "id": "background-texture-layer",
+            })
+
     embedded_svg = ET.SubElement(svg_root, f"{{{SVG_NS}}}svg", {
         "x": f"{layout.map_box.x_cm:.4f}",
         "y": f"{_svg_box_top_y(layout, layout.map_box):.4f}",
@@ -903,8 +1000,11 @@ def _compose_svg_document(
         svg_root,
         layout,
         theme.passepartout_color,
+        opacity=theme.passepartout_opacity,
         bottom_fade=theme.bottom_fade,
         fade_color=theme.bottom_fade_color,
+        inner_border_color=theme.inner_border_color,
+        inner_border_width_px=theme.inner_border_width_px,
     )
     if theme.center_title:
         _append_line_engine_typography(svg_root, layout=layout, title=title, subtitle=subtitle, theme=theme)

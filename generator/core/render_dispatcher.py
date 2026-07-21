@@ -65,6 +65,13 @@ def render_product(
     else:
         uniform_margins = STYLE_REGISTRY[style_name].engine == EngineType.LINE
 
+    use_poster_level_texture = (
+        isinstance(style_cfg, MaptoposterLineStyleConfig)
+        and style_cfg.layout.passepartout_opacity <= 0.001
+        and bool(style_cfg.render.background_texture_path)
+        and style_cfg.render.background_texture_opacity > 0
+    )
+
     bottom_margin_ratio = None
 
     if isinstance(style_cfg, MaptoposterLineStyleConfig):
@@ -153,6 +160,8 @@ def render_product(
                 preview_mode=preview_mode,
                 filename_prefix=filename_prefix,
                 use_cache=use_cache,
+                draw_background_texture=not use_poster_level_texture,
+                transparent_map_background=use_poster_level_texture,
             )
 
         else:
@@ -236,9 +245,18 @@ def render_product(
                 block_engine_layout=True,
             )
         elif isinstance(style_cfg, MaptoposterLineStyleConfig):
+            full_background_texture_path = None
+            full_background_texture_opacity = 0.0
+            if use_poster_level_texture:
+                full_background_texture_path = style_cfg.render.background_texture_path
+                full_background_texture_opacity = style_cfg.render.background_texture_opacity
+
             theme = PosterTheme(
                 background_color=style_cfg.render.background,
                 passepartout_color=style_cfg.layout.passepartout_color,
+                passepartout_opacity=style_cfg.layout.passepartout_opacity,
+                background_texture_path=full_background_texture_path,
+                background_texture_opacity=full_background_texture_opacity,
                 bottom_fade_color=style_cfg.layout.bottom_fade_color,
                 title_color=style_cfg.layout.title_color,
                 subtitle_color=style_cfg.layout.subtitle_color,
@@ -249,6 +267,8 @@ def render_product(
                 body_font_family=style_cfg.layout.body_font_family,
                 bottom_fade=style_cfg.layout.bottom_fade,
                 center_title=style_cfg.layout.center_title,
+                inner_border_color=style_cfg.layout.inner_border_color,
+                inner_border_width_px=style_cfg.layout.inner_border_width_px,
             )
         else:
             theme = PosterTheme(
@@ -292,14 +312,6 @@ def render_product(
                 layout=layout,
                 prefer_cairo=False,
             )
-
-            import fitz
-
-            doc = fitz.open(str(output_pdf))
-            page = doc[0]
-            pix = page.get_pixmap(dpi=96)
-            pix.save(str(layout_result.output_png))
-            doc.close()
 
             output_webp = output_dir / f"{filename_prefix}.webp"
             max_webp_size_bytes = 350 * 1024
