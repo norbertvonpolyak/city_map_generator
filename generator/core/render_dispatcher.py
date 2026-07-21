@@ -73,9 +73,18 @@ def render_product(
     )
 
     bottom_margin_ratio = None
+    layout_config = None
 
     if isinstance(style_cfg, MaptoposterLineStyleConfig):
         bottom_margin_ratio = style_cfg.layout.bottom_margin_ratio
+        # Prepare vintage_atlas layout config
+        if style_name == "vintage_atlas":
+            layout_config = {
+                'side_margin_ratio': style_cfg.layout.side_margin_ratio,
+                'bottom_margin_multiplier': style_cfg.layout.bottom_margin_multiplier,
+                'text_vertical_centering': style_cfg.layout.text_vertical_centering,
+                'title_above_coordinates': style_cfg.layout.title_above_coordinates,
+            }
     elif style_name == "old_time_fantasy" and STYLE_REGISTRY[style_name].engine == EngineType.LINE:
         # Taller lower passepartout to match premium reference composition.
         bottom_margin_ratio = 0.15
@@ -85,6 +94,8 @@ def render_product(
         spec.height_cm,
         uniform_margins=uniform_margins,
         bottom_margin_ratio=bottom_margin_ratio,
+        style_name=style_name,
+        layout_config=layout_config,
     )
     viewport_half_width_m, viewport_half_height_m = layout.map_viewport_half_sizes_m(spec.extent_m)
 
@@ -251,6 +262,22 @@ def render_product(
                 full_background_texture_path = style_cfg.render.background_texture_path
                 full_background_texture_opacity = style_cfg.render.background_texture_opacity
 
+            # Custom scale factors for specific styles
+            title_scale = 0.42
+            coordinates_scale = 0.24
+            title_fixed_size_pt = 0.0
+            coordinates_fixed_size_pt = 0.0
+            title_baseline_spacing_pt = 0.0
+            
+            if style_name == "vintage_atlas":
+                # Use fixed pixel sizes instead of scaling
+                # 64 px = 48 pt (at 96 DPI: 64 * 72/96)
+                # 24 px = 18 pt (at 96 DPI: 24 * 72/96)
+                # 24 px baseline spacing = 18 pt (increased from 13.5pt)
+                title_fixed_size_pt = 48.0
+                coordinates_fixed_size_pt = 18.0
+                title_baseline_spacing_pt = 18.0
+
             theme = PosterTheme(
                 background_color=style_cfg.render.background,
                 passepartout_color=style_cfg.layout.passepartout_color,
@@ -265,8 +292,16 @@ def render_product(
                 title_font_family=style_cfg.layout.title_font_family,
                 subtitle_font_family=style_cfg.layout.subtitle_font_family,
                 body_font_family=style_cfg.layout.body_font_family,
+                coordinates_font_family=style_cfg.layout.coordinates_font_family,
+                title_scale=title_scale,
+                coordinates_scale=coordinates_scale,
+                title_fixed_size_pt=title_fixed_size_pt,
+                coordinates_fixed_size_pt=coordinates_fixed_size_pt,
+                title_baseline_spacing_pt=title_baseline_spacing_pt,
                 bottom_fade=style_cfg.layout.bottom_fade,
                 center_title=style_cfg.layout.center_title,
+                title_letter_spacing_pt=style_cfg.layout.title_letter_spacing_pt,
+                coordinates_letter_spacing_pt=style_cfg.layout.coordinates_letter_spacing_pt,
                 inner_border_color=style_cfg.layout.inner_border_color,
                 inner_border_width_px=style_cfg.layout.inner_border_width_px,
             )

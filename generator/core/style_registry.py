@@ -86,7 +86,7 @@ STYLE_REGISTRY = {
         engine=EngineType.LINE,
     ),
 
-    "mp_black_white": StyleDefinition(
+    "vintage_atlas": StyleDefinition(
         engine=EngineType.LINE,
     ),
 }

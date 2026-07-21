@@ -95,6 +95,7 @@ class PosterTheme:
     background_texture_path: Optional[str] = None
     background_texture_opacity: float = 0.0
     bottom_fade_color: Optional[str] = None
+    coordinates_font_family: str = ""
     title_scale: float = 0.42
     subtitle_scale: float = 0.30
     coordinates_scale: float = 0.24
@@ -103,13 +104,19 @@ class PosterTheme:
     subtitle_align: str = "center"
     coordinates_align: str = "center"
     custom_text_align: str = "center"
+    title_letter_spacing_pt: float = 0.0
     subtitle_letter_spacing_pt: float = 0.0
+    coordinates_letter_spacing_pt: float = 0.0
     text_padding_cm: float = 0.18
     bottom_fade: bool = False
     center_title: bool = False
     block_engine_layout: bool = False
     inner_border_color: Optional[str] = None
     inner_border_width_px: float = 0.0
+    # Fixed size typography (replaces automatic scaling when set)
+    title_fixed_size_pt: float = 0.0  # 0 = auto-scale; >0 = fixed size in points
+    coordinates_fixed_size_pt: float = 0.0  # 0 = auto-scale; >0 = fixed size in points
+    title_baseline_spacing_pt: float = 0.0  # spacing between title and coordinates baselines
 
 
 def _resolve_texture_path(texture_path: str) -> Path:
@@ -169,46 +176,150 @@ def build_poster_layout(
     height_cm: float,
     uniform_margins: bool = False,
     bottom_margin_ratio: Optional[float] = None,
+    style_name: Optional[str] = None,
+    layout_config: Optional[dict] = None,
 ) -> PosterLayout:
+    """
+    Build a poster layout with three completely independent regions:
+    - Paper (entire poster)
+    - Map frame (defined by margins)
+    - Bottom passepartout (layout-independent)
+    
+    For vintage_atlas: applies 2.5x bottom margin with typography centered.
+    For others: uses standard layout.
+    
+    Coordinate system: All LayoutBox y_cm values measured from the BOTTOM of poster.
+    This ensures map and title regions never overlap.
+    
+    Args:
+        layout_config: dict with 'side_margin_ratio', 'bottom_margin_multiplier', 
+                      'text_vertical_centering', 'title_above_coordinates'
+    """
     short_side_cm = min(width_cm, height_cm)
-    side_margin_cm = short_side_cm * 0.04
+    
+    # Extract vintage_atlas-specific config
+    layout_cfg = layout_config or {}
+    side_margin_ratio = layout_cfg.get('side_margin_ratio', 0.04)
+    bottom_margin_multiplier = layout_cfg.get('bottom_margin_multiplier', 1.0)
+    text_vertical_centering = layout_cfg.get('text_vertical_centering', False)
+    title_above_coordinates = layout_cfg.get('title_above_coordinates', False)
+    
+    side_margin_cm = short_side_cm * side_margin_ratio
     top_margin_cm = side_margin_cm
-    if bottom_margin_ratio is not None:
+    
+    # ========================================================================
+    # REGION 1: PAPER (entire poster)
+    # ========================================================================
+    # Paper dimensions: width_cm × height_cm
+    
+    # ========================================================================
+    # REGION 2: BOTTOM PASSEPARTOUT (independent region)
+    # ========================================================================
+    # Calculate bottom margin
+    if style_name == "vintage_atlas" and bottom_margin_multiplier > 1.0:
+        # For vintage_atlas: bottom_margin = side_margin * multiplier
+        bottom_margin_cm = side_margin_cm * bottom_margin_multiplier
+    elif bottom_margin_ratio is not None:
         bottom_margin_cm = height_cm * bottom_margin_ratio
     else:
         bottom_margin_cm = side_margin_cm if uniform_margins else height_cm * 0.10
-
+    
+    # Bottom passepartout occupies: from y=0 to y=bottom_margin_cm (measured from bottom)
+    # This region is COMPLETELY SEPARATE from the map frame above it
+    
+    # ========================================================================
+    # REGION 3: MAP FRAME (independent region, never overlaps passepartout)
+    # ========================================================================
+    # Map frame width: poster width minus left and right margins
     visible_width_cm = width_cm - (side_margin_cm * 2)
+    
+    # Map frame height: poster height minus top margin and bottom passepartout
     visible_height_cm = height_cm - top_margin_cm - bottom_margin_cm
-
+    
+    # Map frame positioned (in bottom-measured coordinates):
+    # - x_cm: side_margin_cm from left edge
+    # - y_cm: bottom_margin_cm from bottom (starts ABOVE the passepartout)
+    # - height extends upward from bottom_margin_cm
     map_box = LayoutBox(
         x_cm=side_margin_cm,
         y_cm=bottom_margin_cm,
         width_cm=visible_width_cm,
         height_cm=visible_height_cm,
     )
+    
+    # ========================================================================
+    # TYPOGRAPHY REGION: BOTTOM PASSEPARTOUT ONLY
+    # ========================================================================
+    # For non-vintage_atlas styles: use standard layout
+    if style_name != "vintage_atlas":
+        gap_cm = bottom_margin_cm * 0.04
+        content_height_cm = bottom_margin_cm - (gap_cm * 5)
+        weights = (1.5, 0.9, 0.8, 0.8)
+        total_weight = sum(w for w in weights if w > 0)
 
-    gap_cm = bottom_margin_cm * 0.04
-    content_height_cm = bottom_margin_cm - (gap_cm * 5)
-    weights = (1.5, 0.9, 0.8, 0.8)
-    total_weight = sum(weights)
+        title_height_cm = content_height_cm * weights[0] / total_weight if weights[0] > 0 else 0
+        subtitle_height_cm = content_height_cm * weights[1] / total_weight if weights[1] > 0 else 0
+        coordinates_height_cm = content_height_cm * weights[2] / total_weight if weights[2] > 0 else 0
+        custom_text_height_cm = content_height_cm * weights[3] / total_weight if weights[3] > 0 else 0
 
-    title_height_cm = content_height_cm * weights[0] / total_weight
-    subtitle_height_cm = content_height_cm * weights[1] / total_weight
-    coordinates_height_cm = content_height_cm * weights[2] / total_weight
-    custom_text_height_cm = content_height_cm * weights[3] / total_weight
+        cursor_y = gap_cm
+        custom_text_box = LayoutBox(side_margin_cm, cursor_y, visible_width_cm, custom_text_height_cm)
+        cursor_y += custom_text_height_cm + gap_cm
 
-    cursor_y = gap_cm
-    custom_text_box = LayoutBox(side_margin_cm, cursor_y, visible_width_cm, custom_text_height_cm)
-    cursor_y += custom_text_height_cm + gap_cm
+        coordinates_box = LayoutBox(side_margin_cm, cursor_y, visible_width_cm, coordinates_height_cm)
+        cursor_y += coordinates_height_cm + gap_cm
 
-    coordinates_box = LayoutBox(side_margin_cm, cursor_y, visible_width_cm, coordinates_height_cm)
-    cursor_y += coordinates_height_cm + gap_cm
+        subtitle_box = LayoutBox(side_margin_cm, cursor_y, visible_width_cm, subtitle_height_cm)
+        cursor_y += subtitle_height_cm + gap_cm
 
-    subtitle_box = LayoutBox(side_margin_cm, cursor_y, visible_width_cm, subtitle_height_cm)
-    cursor_y += subtitle_height_cm + gap_cm
-
-    title_box = LayoutBox(side_margin_cm, cursor_y, visible_width_cm, title_height_cm)
+        title_box = LayoutBox(side_margin_cm, cursor_y, visible_width_cm, title_height_cm)
+    
+    # For vintage_atlas: position title and coordinates as independent block in center of passepartout
+    else:
+        # Passepartout region: from y=0 to y=bottom_margin_cm
+        passepartout_top_y = bottom_margin_cm      # Top of passepartout region
+        passepartout_bottom_y = 0                  # Bottom of passepartout region
+        passepartout_center_y = (passepartout_top_y + passepartout_bottom_y) / 2
+        
+        # Calculate text block height (title + gap + coordinates)
+        # Use proportions of the passepartout
+        title_height_ratio = 0.40
+        gap_ratio = 0.05
+        coordinates_height_ratio = 0.30
+        
+        title_height_cm = bottom_margin_cm * title_height_ratio
+        gap_cm = bottom_margin_cm * gap_ratio
+        coordinates_height_cm = bottom_margin_cm * coordinates_height_ratio
+        
+        text_block_total_height = title_height_cm + gap_cm + coordinates_height_cm
+        
+        # Center the entire text block vertically within the passepartout
+        text_block_top_y = passepartout_center_y + (text_block_total_height / 2)
+        
+        # Position title at the top of the centered block
+        title_box_y = text_block_top_y - title_height_cm
+        
+        # Position coordinates below title with gap
+        coordinates_box_y = title_box_y - gap_cm - coordinates_height_cm
+        
+        # Create boxes: positioned entirely within [0, bottom_margin_cm]
+        title_box = LayoutBox(
+            x_cm=side_margin_cm,
+            y_cm=title_box_y,
+            width_cm=visible_width_cm,
+            height_cm=title_height_cm
+        )
+        
+        coordinates_box = LayoutBox(
+            x_cm=side_margin_cm,
+            y_cm=coordinates_box_y,
+            width_cm=visible_width_cm,
+            height_cm=coordinates_height_cm
+        )
+        
+        # For vintage_atlas, no subtitle or custom text in passepartout
+        subtitle_box = LayoutBox(side_margin_cm, 0, visible_width_cm, 0)
+        custom_text_box = LayoutBox(side_margin_cm, 0, visible_width_cm, 0)
 
     return PosterLayout(
         width_cm=width_cm,
@@ -473,6 +584,12 @@ def _resolve_any_font_path(font_family: str) -> Optional[Path]:
             _resolve_montserrat_font_path("Medium"),
             _resolve_inter_extra_light_font_path(),
         ])
+    elif "arsenal" in family:
+        candidates.extend([
+            _resolve_arsenal_font_path(),
+            _resolve_montserrat_font_path("Medium"),
+            _resolve_dejavu_sans_font_path(),
+        ])
     elif "cormorant" in family:
         candidates.extend([
             _resolve_cormorant_font_path(),
@@ -511,6 +628,26 @@ def _resolve_cormorant_font_path() -> Optional[Path]:
     for candidate in candidates:
         if candidate.exists():
             return candidate
+    return None
+
+
+def _resolve_arsenal_font_path() -> Optional[Path]:
+    """Resolve Arsenal font (Google Font)."""
+    current = Path(__file__).resolve()
+    candidates = [
+        current.parents[1] / "Fonts" / "Arsenal-Regular.ttf",
+        current.parents[2] / "Fonts" / "Arsenal-Regular.ttf",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    # Try system font as fallback
+    try:
+        candidate = Path(FontProperties(family="Arsenal").get_file())
+        if candidate.exists():
+            return candidate
+    except Exception:
+        pass
     return None
 
 
@@ -780,6 +917,95 @@ def _append_line_engine_typography(
     coordinate_font_path = _resolve_dejavu_sans_font_path() or _resolve_montserrat_font_path("Medium") or _resolve_dm_sans_font_path("Regular") or subtitle_font_path
     is_old_time_layout = "cormorant" in (theme.title_font_family or "").lower()
 
+    # ========================================================================
+    # VINTAGE ATLAS: Use fixed pixel sizes (no automatic scaling)
+    # ========================================================================
+    if theme.center_title and title and layout.title_box.height_cm > 0 and theme.title_fixed_size_pt > 0:
+        # Resolve fonts
+        title_font_path_fixed = _resolve_font_path_by_family(theme.title_font_family)
+
+        coords_font_path = None
+        if theme.coordinates_font_family:
+            coords_font_path = _resolve_font_path_by_family(theme.coordinates_font_family)
+        if not coords_font_path:
+            coords_font_path = subtitle_font_path
+
+        if not title_font_path_fixed or not coords_font_path:
+            return
+
+        # ── Step 1: block dimensions (points → cm) ────────────────────────
+        title_h   = theme.title_fixed_size_pt       / 28.3464567  # 48 pt → ~1.693 cm
+        coords_h  = theme.coordinates_fixed_size_pt / 28.3464567  # 18 pt → ~0.635 cm
+        spacing_h = theme.title_baseline_spacing_pt / 28.3464567  # 18 pt → ~0.635 cm
+
+        block_h = title_h + spacing_h + coords_h  # total typography block height
+
+        # ── Step 2: passepartout bounds (y from BOTTOM of poster) ─────────
+        #   bottom_passepartout_bottom = 0          (very bottom of poster)
+        #   bottom_passepartout_top    = bottom_margin_cm  (map frame bottom edge)
+        passe_bottom = 0.0
+        passe_top    = layout.bottom_margin_cm
+        passe_center = (passe_bottom + passe_top) / 2.0  # vertical center of passepartout
+
+        # ── Step 3: position block so block_center == passe_center ────────
+        block_center = passe_center
+        block_top    = block_center + block_h / 2.0   # top edge of block
+        block_bottom = block_center - block_h / 2.0   # bottom edge of block
+
+        # ── Step 4: derive per-element CENTER y (used by the SVG formula) ─
+        #   The standard formula  offset_y = cy - bbox.height*scale/2 - bbox.y0*scale
+        #   places the bounding-box center exactly at `cy`.
+        #
+        #   Title occupies   [block_top - title_h , block_top]
+        #   Coords occupies  [block_bottom         , block_bottom + coords_h]
+        title_cy  = block_top    - title_h  / 2.0          # centre of title slot
+        coords_cy = block_bottom + coords_h / 2.0          # centre of coords slot
+
+        # Horizontal centre (same for both elements)
+        cx = layout.title_box.center_x_cm
+
+        # ── Draw TITLE ────────────────────────────────────────────────────
+        title_text = title.upper()
+        tp   = TextPath((0, 0), title_text, prop=FontProperties(fname=str(title_font_path_fixed)), size=1)
+        bbox = tp.get_extents()
+        if bbox.height > 0:
+            scale        = title_h / bbox.height
+            w            = bbox.width * scale
+            offset_x     = cx - w / 2.0 - bbox.x0 * scale
+            offset_y     = title_cy - bbox.height * scale / 2.0 - bbox.y0 * scale
+            path_elem = ET.SubElement(typo, f"{{{SVG_NS}}}path", {
+                "d":      _text_path_to_svg_d(tp, scale=scale, offset_x_cm=offset_x, offset_y_cm=offset_y, layout=layout),
+                "fill":   theme.title_color,
+                "stroke": "none",
+                "id":     "title-text",
+            })
+            if theme.title_letter_spacing_pt > 0:
+                path_elem.set("letter-spacing", f"{theme.title_letter_spacing_pt:.2f}pt")
+
+        # ── Draw COORDINATES ──────────────────────────────────────────────
+        if subtitle:
+            coords_text = subtitle.upper()
+            sp     = TextPath((0, 0), coords_text, prop=FontProperties(fname=str(coords_font_path)), size=1)
+            s_bbox = sp.get_extents()
+            if s_bbox.height > 0:
+                s_scale    = coords_h / s_bbox.height
+                sw         = s_bbox.width * s_scale
+                s_offset_x = cx - sw / 2.0 - s_bbox.x0 * s_scale
+                s_offset_y = coords_cy - s_bbox.height * s_scale / 2.0 - s_bbox.y0 * s_scale
+                path_elem = ET.SubElement(typo, f"{{{SVG_NS}}}path", {
+                    "d":      _text_path_to_svg_d(sp, scale=s_scale, offset_x_cm=s_offset_x, offset_y_cm=s_offset_y, layout=layout),
+                    "fill":   theme.coordinates_color,
+                    "stroke": "none",
+                    "id":     "coordinates-text",
+                })
+                if theme.coordinates_letter_spacing_pt > 0:
+                    path_elem.set("letter-spacing", f"{theme.coordinates_letter_spacing_pt:.2f}pt")
+
+        return  # early exit — bypass standard rendering
+    
+    # ========================================================================
+    # STANDARD LINE LAYOUTS: Use original footer-based positioning
+    # ========================================================================
     footer_fade_cm = layout.height_cm * 0.10 if is_old_time_layout else layout.height_cm * 0.40
     footer_total_cm = layout.bottom_margin_cm + footer_fade_cm
     footer_center_cm = footer_total_cm / 2
@@ -916,6 +1142,7 @@ def _append_line_engine_typography(
                         "stroke": theme.subtitle_color,
                         "stroke-width": f"{stroke_w:.4f}",
                     })
+
 
 
 def _compose_svg_document(

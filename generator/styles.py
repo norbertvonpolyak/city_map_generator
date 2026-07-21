@@ -82,10 +82,18 @@ class MaptoposterLineLayoutConfig:
     title_font_family: str = "Montserrat-Bold"
     subtitle_font_family: str = "Montserrat-Medium"
     body_font_family: str = "Montserrat-Medium"
+    coordinates_font_family: str = "Montserrat-Medium"
     bottom_fade: bool = False
     center_title: bool = False
     inner_border_color: str | None = None
     inner_border_width_px: float = 0.0
+    title_letter_spacing_pt: float = 0.0
+    coordinates_letter_spacing_pt: float = 0.0
+    # Vintage Atlas specific layout parameters
+    side_margin_ratio: float = 0.04  # side margin as ratio of short side
+    bottom_margin_multiplier: float = 1.0  # bottom margin = side_margin * this multiplier
+    text_vertical_centering: bool = False  # vertically center text block in bottom margin
+    title_above_coordinates: bool = False  # title placed above coordinates (not subtitle)
 
 
 @dataclass(frozen=True)
@@ -527,13 +535,13 @@ STYLES = {
         ),
     ),
 
-    "mp_black_white": MaptoposterLineStyleConfig(
+    "vintage_atlas": MaptoposterLineStyleConfig(
         render=MaptoposterLineRenderConfig(
-            background="#FCFCFB",
+            background="#FCFCFB32",
             text="#2B2B2B",
 
             water="#EFEFEF",
-            parks="#F3F3F3",
+            parks="#7D756D",
 
             road_colors={
                 "motorway": "#3B3B3B",
@@ -555,10 +563,14 @@ STYLES = {
                 "default": 0.8,
             },
             background_texture_path="assets/textures/mp_black_white_paper.jpg",
-            background_texture_opacity=0.7,
+            background_texture_opacity=0.6,
         ),
         layout=MaptoposterLineLayoutConfig(
             uniform_margins=True,
+            side_margin_ratio=0.04,
+            bottom_margin_multiplier=2.5,
+            text_vertical_centering=True,
+            title_above_coordinates=True,
             passepartout_color="#FFFFFF",
             passepartout_opacity=0.0,
             bottom_fade_color="#FFFFFF",
@@ -566,6 +578,11 @@ STYLES = {
             subtitle_color="#2C2C2C",
             coordinates_color="#2C2C2C",
             custom_text_color="#2C2C2C",
+            title_font_family="Cormorant Garamond",
+            coordinates_font_family="Arsenal",
+            center_title=True,
+            title_letter_spacing_pt=2.0,
+            coordinates_letter_spacing_pt=1.0,
             inner_border_color="#8B6B4A",
             inner_border_width_px=4.0,
         ),
