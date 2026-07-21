@@ -19,6 +19,7 @@ BASE_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = BASE_DIR / "output"
 CITY_DATA_PATH = BASE_DIR.parent / "woocommerce_helpers" / "data" / "cities_with_coords.json"
 SIZE_KEY = "50x70"
+SIZE_KEY = os.getenv("BATCH_SIZE_KEY", SIZE_KEY)
 MAX_WEBP_BYTES = 150 * 1024
 MAX_WEBP_LONG_SIDE = 1500
 RETRY_ATTEMPTS = max(int(os.getenv("BATCH_RETRY_ATTEMPTS", "3")), 1)
