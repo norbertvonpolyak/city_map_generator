@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Dict, List
@@ -465,7 +465,7 @@ STYLES = {
     "vintage_atlas": MaptoposterLineStyleConfig(
         render=MaptoposterLineRenderConfig(
             background="#FCFCFB32",
-            text="#2B2B2B",
+            text="#2B2A2A",
 
             water="#EFEFEF",
             parks="#7D756D",
