@@ -74,15 +74,7 @@ STYLE_REGISTRY = {
     # LINE ENGINE STYLES
     # ---------------------------------------------------------
 
-    "mp_terracotta": StyleDefinition(
-        engine=EngineType.LINE,
-    ),
-
-    "mp_noir": StyleDefinition(
-        engine=EngineType.LINE,
-    ),
-
-    "mp_blueprint": StyleDefinition(
+    "mp_noir_gold": StyleDefinition(
         engine=EngineType.LINE,
     ),
 
