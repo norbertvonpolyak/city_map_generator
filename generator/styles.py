@@ -426,57 +426,20 @@ STYLES = {
     # LINE ENGINE
     # -------------------------------------------------------------------------
 
-    "mp_terracotta": MaptoposterLineStyleConfig(
-        render=MaptoposterLineRenderConfig(
-            background="#FBF6EF",
-            text="#4A3B30",
-            water="#83DBC5",
-            parks="#B2BEAA",
-
-            road_colors={
-                "motorway": "#8B3E23",
-                "trunk": "#B55A37",
-                "primary": "#B55A37",
-                "secondary": "#B55A37",
-                "tertiary": "#B55A37",
-                "residential": "#72625C",
-                "default": "#928F8D",
-            },
-            road_widths={
-                "motorway": 5.2,
-                "trunk": 4.3,
-                "primary": 4.3,
-                "secondary": 3.7,
-                "tertiary": 3.15,
-                "residential": 1.2,
-                "default": 0.9,
-            },
-        ),
-        layout=MaptoposterLineLayoutConfig(
-            uniform_margins=True,
-            passepartout_color="#F6F3EE",
-            bottom_fade_color="#F6F3EE",
-            title_color="#8B4513",
-            subtitle_color="#8B4513",
-            coordinates_color="#8B4513",
-            custom_text_color="#8B4513",
-        ),
-    ),
-
-    "mp_noir": MaptoposterLineStyleConfig(
+    "mp_noir_gold": MaptoposterLineStyleConfig(
         render=MaptoposterLineRenderConfig(
             background="#000000",
             text="#FFFFFF",
             water="#5C5C5C",
             parks="#272727",
             road_colors={
-                "motorway": "#E6E6E6",
-                "trunk": "#E6E6E6",
-                "primary": "#E6E6E6",
-                "secondary": "#E9E9E9",
-                "tertiary": "#DFDFDF",
-                "residential": "#A1A1A1",
-                "default": "#808080",
+                "motorway": "#BB9F02",      # bright gold
+                "trunk": "#BB9F02",         # gold, slightly darker
+                "primary": "#DD9F01",       # gold, darker
+                "secondary": "#E6B800",     # darker gold
+                "tertiary": "#9C9C7E",      # even darker gold
+                "residential": "#817F78",   # dark gold
+                "default": "#999B8F",       # very dark gold/bronze
             },
             road_widths={
                 "motorway": 5.2,
@@ -492,46 +455,10 @@ STYLES = {
             uniform_margins=True,
             passepartout_color="#101010",
             bottom_fade_color="#000000",
-            title_color="#FFFFFF",
-            subtitle_color="#FFFFFF",
-            coordinates_color="#FFFFFF",
-            custom_text_color="#FFFFFF",
-        ),
-    ),
-
-    "mp_blueprint": MaptoposterLineStyleConfig(
-        render=MaptoposterLineRenderConfig(
-            background="#1A3A5C",
-            text="#E8F4FF",
-            water="#CAB246",
-            parks="#4B5A53",
-            road_colors={
-                "motorway": "#E8F4FF",
-                "trunk": "#E8F4FF",
-                "primary": "#E8F4FF",
-                "secondary": "#9FC5E8",
-                "tertiary": "#7BAED4",
-                "residential": "#5A96C0",
-                "default": "#7BAED4",
-            },
-            road_widths={
-                "motorway": 5.2,
-                "trunk": 4.0,
-                "primary": 4.0,
-                "secondary": 3.7,
-                "tertiary": 3.15,
-                "residential": 1.5,
-                "default": 1.2,
-            },
-        ),
-        layout=MaptoposterLineLayoutConfig(
-            uniform_margins=True,
-            passepartout_color="#1A3A5C",
-            bottom_fade_color="#1A3A5C",
-            title_color="#E8F4FF",
-            subtitle_color="#E8F4FF",
-            coordinates_color="#E8F4FF",
-            custom_text_color="#E8F4FF",
+            title_color="#FFD700",         # gold text
+            subtitle_color="#FFD700",      # gold subtitle
+            coordinates_color="#FFD700",   # gold coordinates
+            custom_text_color="#FFD700",   # gold custom text
         ),
     ),
 
