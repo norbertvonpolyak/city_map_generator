@@ -1,8 +1,9 @@
 import pickle
 from pathlib import Path
+from time import perf_counter
 from typing import Callable, Any
 
-CACHE_DIR = Path("cache")
+CACHE_DIR = Path(__file__).resolve().parents[2] / "cache"
 CACHE_DIR.mkdir(exist_ok=True)
 
 
@@ -34,14 +35,21 @@ def load_or_build_geometry(
     cache_path = CACHE_DIR / cache_key
 
     if cache_path.exists():
-        print(f"[CACHE] Loading geometry: {cache_key}")
+        started = perf_counter()
         with open(cache_path, "rb") as f:
-            return pickle.load(f)
+            data = pickle.load(f)
+        elapsed = perf_counter() - started
+        print(f"[CACHE] Loading geometry: {cache_key} ({elapsed:.2f}s)")
+        return data
 
     print(f"[CACHE] Building geometry: {cache_key}")
+    started = perf_counter()
     geometry_data = builder_func()
+    elapsed = perf_counter() - started
 
     with open(cache_path, "wb") as f:
         pickle.dump(geometry_data, f)
+
+    print(f"[CACHE] Built geometry: {cache_key} ({elapsed:.2f}s)")
 
     return geometry_data

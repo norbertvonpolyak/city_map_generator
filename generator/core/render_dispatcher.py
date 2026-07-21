@@ -135,6 +135,7 @@ def render_product(
                 palette_name=style_name,
                 preview_mode=preview_mode,
                 filename_prefix=filename_prefix,
+                use_cache=use_cache,
             )
 
         elif style_def.engine == EngineType.LINE:

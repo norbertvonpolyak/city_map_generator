@@ -19,6 +19,7 @@ from osmnx._errors import InsufficientResponseError
 from shapely.geometry import Point, Polygon, MultiPolygon, box
 from shapely.ops import unary_union, polygonize
 
+from generator.core.cache import load_or_build_geometry
 from generator.specs import ProductSpec
 from generator.styles import get_style_config, BuildingStyleConfig
 
@@ -199,6 +200,7 @@ def render_map_building(
     network_type_draw: str = "drive",
     zoom: float = 0.6,
     min_building_area: float = 15.0,
+    use_cache: bool = True,
 ) -> MapLayerResult:
 
     print(">>> ENTER render_map_building")
@@ -254,235 +256,293 @@ def render_map_building(
 
     clip_rect = box(minx, miny, maxx, maxy)
 
-    # =============================================================================
-    # ROADS
-    # =============================================================================
+    def _build_geometry() -> dict[str, object]:
 
-    print(">>> Downloading roads...")
+        print(">>> Downloading roads...")
 
-    G = ox.graph_from_point(
-        (center_lat, center_lon),
-        dist=dist_m,
-        network_type=network_type_draw,
-        simplify=True,
-    )
-
-    edges = ox.graph_to_gdfs(G, nodes=False, edges=True)
-
-    edges_p = ox.projection.project_gdf(edges)
-
-    edges_p = gpd.clip(
-        edges_p,
-        gpd.GeoSeries([clip_rect], crs=edges_p.crs)
-    )
-
-    edges_p = edges_p[~edges_p.is_empty]
-
-    if "highway" in edges_p.columns:
-
-        edges_p["highway"] = edges_p["highway"].apply(
-            _normalize_highway_value
+        G = ox.graph_from_point(
+            (center_lat, center_lon),
+            dist=dist_m,
+            network_type=network_type_draw,
+            simplify=True,
         )
 
-        edges_p["road_class"] = edges_p["highway"].apply(
-            _classify_road
+        edges = ox.graph_to_gdfs(G, nodes=False, edges=True)
+
+        edges_p = ox.projection.project_gdf(edges)
+
+        edges_p = gpd.clip(
+            edges_p,
+            gpd.GeoSeries([clip_rect], crs=edges_p.crs)
         )
 
-    else:
-        edges_p["road_class"] = "local"
+        edges_p = edges_p[~edges_p.is_empty]
 
-    print(">>> Roads ready")
+        if "highway" in edges_p.columns:
 
-    # =============================================================================
-    # FEATURE QUERY – MAXIMAL ZÖLD
-    # =============================================================================
+            edges_p["highway"] = edges_p["highway"].apply(
+                _normalize_highway_value
+            )
 
-    if render_only_buildings:
-        tags = {
-            "building": True,
-            "building:part": True,
+            edges_p["road_class"] = edges_p["highway"].apply(
+                _classify_road
+            )
+
+        else:
+            edges_p["road_class"] = "local"
+
+        print(">>> Roads ready")
+
+        if render_only_buildings:
+            tags = {
+                "building": True,
+                "building:part": True,
+            }
+        else:
+            tags = {
+
+                "building": True,
+                "building:part": True,
+
+                "landuse": [
+                    "grass","meadow","farmland","orchard","forest",
+                    "allotments","garden","recreation_ground",
+                    "village_green","cemetery",
+                    "industrial","commercial","retail",
+                    "education"
+                ],
+
+                "leisure": [
+                    "park","garden","pitch","sports_centre","stadium",
+                    "nature_reserve","playground","dog_park"
+                ],
+
+                "natural": [
+                    "water","wood","scrub","grassland","wetland",
+                    "heath","fell","beach","sand"
+                ],
+
+                "amenity": [
+                    "parking","grave_yard","school","college","university"
+                ],
+
+                "place": ["square"],
+
+                "highway": ["pedestrian"],
+            }
+
+        print(">>> Downloading unified features...")
+
+        gdf_all = ox.features_from_point(
+            (center_lat, center_lon),
+            tags=tags,
+            dist=dist_m,
+        )
+
+        gdf_all = gdf_all[gdf_all.geometry.notnull()]
+
+        gdf_all_p = ox.projection.project_gdf(gdf_all)
+
+        gdf_all_p = gdf_all_p[
+            gdf_all_p.geom_type.isin(["Polygon", "MultiPolygon"])
+        ]
+
+        gdf_all_p = gpd.clip(
+            gdf_all_p,
+            gpd.GeoSeries([clip_rect], crs=gdf_all_p.crs),
+        )
+
+        trees_p = gpd.GeoDataFrame(geometry=[], crs=gdf_all_p.crs)
+        if not render_only_buildings:
+            print(">>> Downloading trees...")
+
+            trees = ox.features_from_point(
+                (center_lat, center_lon),
+                tags={"natural": "tree"},
+                dist=dist_m,
+            )
+
+            trees = trees[trees.geometry.notnull()]
+
+            trees_p = ox.projection.project_gdf(trees)
+
+            trees_p = gpd.clip(
+                trees_p,
+                gpd.GeoSeries([clip_rect], crs=trees_p.crs),
+            )
+
+        waterway_p = gpd.GeoDataFrame(geometry=[], crs=gdf_all_p.crs)
+        if not render_only_buildings:
+            print(">>> Downloading waterways...")
+
+            waterway = ox.features_from_point(
+                (center_lat, center_lon),
+                tags={"waterway": True},
+                dist=dist_m,
+            )
+
+            waterway = waterway[waterway.geometry.notnull()]
+
+            waterway_p = ox.projection.project_gdf(waterway)
+
+            waterway_p = gpd.clip(
+                waterway_p,
+                gpd.GeoSeries([clip_rect], crs=waterway_p.crs),
+            )
+
+            waterway_p = waterway_p[~waterway_p.is_empty]
+
+            if len(waterway_p) > 0:
+
+                width_map = {
+                    "river": 4,
+                    "stream": 2,
+                    "ditch": 1,
+                    "canal": 3,
+                }
+
+                if "waterway" in waterway_p.columns:
+
+                    waterway_p["width"] = waterway_p["waterway"].map(width_map).fillna(1.5)
+
+                    waterway_p["geometry"] = waterway_p.apply(
+                        lambda r: r.geometry.buffer(r.width),
+                        axis=1,
+                    )
+
+        railway_p = gpd.GeoDataFrame(geometry=[], crs=gdf_all_p.crs)
+        if not render_only_buildings:
+            print(">>> Downloading railways...")
+
+            railway = ox.features_from_point(
+                (center_lat, center_lon),
+                tags={"railway": True},
+                dist=dist_m,
+            )
+
+            railway = railway[railway.geometry.notnull()]
+
+            railway_p = ox.projection.project_gdf(railway)
+
+            railway_p = gpd.clip(
+                railway_p,
+                gpd.GeoSeries([clip_rect], crs=railway_p.crs),
+            )
+
+            railway_p = railway_p[~railway_p.is_empty]
+
+        paths_p = gpd.GeoDataFrame(geometry=[], crs=gdf_all_p.crs)
+        if not render_only_buildings:
+            print(">>> Downloading paths...")
+
+            paths = ox.features_from_point(
+                (center_lat, center_lon),
+                tags={
+                    "highway": [
+                        "footway",
+                        "path",
+                        "track",
+                        "steps"
+                    ]
+                },
+                dist=dist_m,
+            )
+
+            paths = paths[paths.geometry.notnull()]
+
+            paths_p = ox.projection.project_gdf(paths)
+
+            paths_p = gpd.clip(
+                paths_p,
+                gpd.GeoSeries([clip_rect], crs=paths_p.crs),
+            )
+
+            paths_p = paths_p[~paths_p.is_empty]
+
+        railway_p = railway_p[
+            railway_p.geom_type.isin(["LineString", "MultiLineString"])
+        ]
+
+        coast_water = None
+        if not render_only_buildings:
+            print(">>> Downloading coastline...")
+
+            try:
+
+                coast = ox.features_from_point(
+                    (center_lat, center_lon),
+                    tags={"natural": "coastline"},
+                    dist=dist_m,
+                )
+
+                coast = coast[coast.geometry.notnull()]
+
+                if len(coast) > 0:
+
+                    coast_p = ox.projection.project_gdf(coast)
+
+                    coast_p = gpd.clip(
+                        coast_p,
+                        gpd.GeoSeries([clip_rect], crs=coast_p.crs),
+                    )
+
+                    coast_lines = coast_p.geometry
+
+                    water_polygons = list(polygonize(coast_lines))
+
+                    if len(water_polygons) > 0:
+
+                        coast_water = gpd.GeoDataFrame(
+                            geometry=water_polygons,
+                            crs=coast_p.crs,
+                        )
+
+                        coast_water = gpd.clip(
+                            coast_water,
+                            gpd.GeoSeries([clip_rect], crs=coast_water.crs),
+                        )
+
+            except InsufficientResponseError:
+
+                print(">>> No coastline found in this area")
+
+        return {
+            "edges_p": edges_p,
+            "gdf_all_p": gdf_all_p,
+            "trees_p": trees_p,
+            "waterway_p": waterway_p,
+            "railway_p": railway_p,
+            "paths_p": paths_p,
+            "coast_water": coast_water,
+            "bounds": (minx, maxx, miny, maxy),
         }
+
+    if use_cache:
+        geometry_data = load_or_build_geometry(
+            cache_prefix="building_v1_density",
+            center_lat=center_lat,
+            center_lon=center_lon,
+            extent_m=spec.extent_m,
+            cache_variant=f"{half_width_m:.2f}x{half_height_m:.2f}_{network_type_draw}",
+            builder_func=_build_geometry,
+        )
     else:
-        tags = {
+        print("[CACHE] Disabled: rebuilding geometry")
+        geometry_data = _build_geometry()
 
-            "building": True,
-            "building:part": True,
+    edges_p = geometry_data["edges_p"]
+    gdf_all_p = geometry_data["gdf_all_p"]
+    trees_p = geometry_data["trees_p"]
+    waterway_p = geometry_data["waterway_p"]
+    railway_p = geometry_data["railway_p"]
+    paths_p = geometry_data["paths_p"]
+    coast_water = geometry_data["coast_water"]
+    minx, maxx, miny, maxy = geometry_data["bounds"]
 
-            "landuse": [
-                "grass","meadow","farmland","orchard","forest",
-                "allotments","garden","recreation_ground",
-                "village_green","cemetery",
-                "industrial","commercial","retail",
-                "education"
-            ],
-
-            "leisure": [
-                "park","garden","pitch","sports_centre","stadium",
-                "nature_reserve","playground","dog_park"
-            ],
-
-            "natural": [
-                "water","wood","scrub","grassland","wetland",
-                "heath","fell","beach","sand"
-            ],
-
-            "amenity": [
-                "parking","grave_yard","school","college","university"
-            ],
-
-            "place": ["square"],
-
-            "highway": ["pedestrian"],
-        }
-
-    print(">>> Downloading unified features...")
-
-    gdf_all = ox.features_from_point(
-        (center_lat, center_lon),
-        tags=tags,
-        dist=dist_m,
-    )
-
-    gdf_all = gdf_all[gdf_all.geometry.notnull()]
-
-    gdf_all_p = ox.projection.project_gdf(gdf_all)
-
-    gdf_all_p = gdf_all_p[
-        gdf_all_p.geom_type.isin(["Polygon", "MultiPolygon"])
-    ]
-
-    gdf_all_p = gpd.clip(
-        gdf_all_p,
-        gpd.GeoSeries([clip_rect], crs=gdf_all_p.crs),
-    )
-
-    # =============================================================================
-    # TREES
-    # =============================================================================
-
-    trees_p = None
     draw_green_layers = (not render_only_buildings) and (palette_name != "mono_black")
     draw_tree_layers = draw_green_layers and (
         palette_name not in {"arctic_blue", "luxury_gold", "midnight_blue"}
     )
-
-    if not render_only_buildings:
-        print (">>> Downloading trees...")
-
-        trees = ox.features_from_point (
-            (center_lat, center_lon),
-            tags={"natural": "tree"},
-            dist=dist_m,
-        )
-
-        trees = trees [trees.geometry.notnull ()]
-
-        trees_p = ox.projection.project_gdf (trees)
-
-        trees_p = gpd.clip (
-            trees_p,
-            gpd.GeoSeries ([clip_rect], crs=trees_p.crs),
-        )
-
-    # =============================================================================
-    # WATERWAYS
-    # =============================================================================
-
-    waterway_p = gpd.GeoDataFrame(geometry=[], crs=gdf_all_p.crs)
-    if not render_only_buildings:
-        print(">>> Downloading waterways...")
-
-        waterway = ox.features_from_point(
-            (center_lat, center_lon),
-            tags={"waterway": True},
-            dist=dist_m,
-        )
-
-        waterway = waterway[waterway.geometry.notnull()]
-
-        waterway_p = ox.projection.project_gdf(waterway)
-
-        waterway_p = gpd.clip(
-            waterway_p,
-            gpd.GeoSeries([clip_rect], crs=waterway_p.crs),
-        )
-
-        waterway_p = waterway_p[~waterway_p.is_empty]
-
-        if len(waterway_p) > 0:
-
-            width_map = {
-                "river": 4,
-                "stream": 2,
-                "ditch": 1,
-                "canal": 3,
-            }
-
-            if "waterway" in waterway_p.columns:
-
-                waterway_p["width"] = waterway_p["waterway"].map(width_map).fillna(1.5)
-
-                waterway_p["geometry"] = waterway_p.apply(
-                    lambda r: r.geometry.buffer(r.width),
-                    axis=1,
-                )
-
-    # =============================================================================
-    # RAILWAY
-    # =============================================================================
-
-    railway_p = gpd.GeoDataFrame(geometry=[], crs=gdf_all_p.crs)
-    if not render_only_buildings:
-        print (">>> Downloading railways...")
-
-        railway = ox.features_from_point (
-            (center_lat, center_lon),
-            tags={"railway": True},
-            dist=dist_m,
-        )
-
-        railway = railway [railway.geometry.notnull ()]
-
-        railway_p = ox.projection.project_gdf (railway)
-
-        railway_p = gpd.clip (
-            railway_p,
-            gpd.GeoSeries ([clip_rect], crs=railway_p.crs),
-        )
-
-        railway_p = railway_p [~railway_p.is_empty]
-
-    # =============================================================================
-    # PATHS (parks / cemeteries / forests)
-    # =============================================================================
-
-    paths_p = gpd.GeoDataFrame(geometry=[], crs=gdf_all_p.crs)
-    if not render_only_buildings:
-        print (">>> Downloading paths...")
-
-        paths = ox.features_from_point (
-            (center_lat, center_lon),
-            tags={
-                "highway": [
-                    "footway",
-                    "path",
-                    "track",
-                    "steps"
-                ]
-            },
-            dist=dist_m,
-        )
-
-        paths = paths [paths.geometry.notnull ()]
-
-        paths_p = ox.projection.project_gdf (paths)
-
-        paths_p = gpd.clip (
-            paths_p,
-            gpd.GeoSeries ([clip_rect], crs=paths_p.crs),
-        )
-
-        paths_p = paths_p [~paths_p.is_empty]
 
     # =============================================================================
     # SAFE COLUMN ACCESS
@@ -569,61 +629,6 @@ def render_map_building(
         |
         ((highway == "pedestrian") if highway is not None else False)
     ]
-    railway_p = railway_p[
-        railway_p.geom_type.isin(["LineString", "MultiLineString"])
-    ]
-
-    # =============================================================================
-    # COASTLINE (Balaton fix)
-    # =============================================================================
-
-    # =============================================================================
-    # COASTLINE (Balaton fix)
-    # =============================================================================
-
-    coast_water = None
-    if not render_only_buildings:
-        print (">>> Downloading coastline...")
-
-        try:
-
-            coast = ox.features_from_point (
-                (center_lat, center_lon),
-                tags={"natural": "coastline"},
-                dist=dist_m,
-            )
-
-            coast = coast [coast.geometry.notnull ()]
-
-            if len (coast) > 0:
-
-                coast_p = ox.projection.project_gdf (coast)
-
-                coast_p = gpd.clip (
-                    coast_p,
-                    gpd.GeoSeries ([clip_rect], crs=coast_p.crs),
-                )
-
-                coast_lines = coast_p.geometry
-
-                water_polygons = list (polygonize (coast_lines))
-
-                if len (water_polygons) > 0:
-
-                    coast_water = gpd.GeoDataFrame (
-                        geometry=water_polygons,
-                        crs=coast_p.crs,
-                    )
-
-                    coast_water = gpd.clip (
-                        coast_water,
-                        gpd.GeoSeries ([clip_rect], crs=coast_water.crs),
-                    )
-
-        except InsufficientResponseError:
-
-            print (">>> No coastline found in this area")
-
     # =============================================================================
     # EXTRA AREAS
     # =============================================================================

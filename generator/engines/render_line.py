@@ -294,7 +294,7 @@ def render_map_line(
             center_lat=center_lat,
             center_lon=center_lon,
             extent_m=extent_m,
-            cache_variant=f"{palette_name}_v1",
+            cache_variant="geom_v2",
             builder_func=_build_geometry,
         )
         if use_cache

@@ -38,10 +38,6 @@ STYLE_REGISTRY = {
         engine=EngineType.BLOCK,
     ),
 
-    "minimal_sand": StyleDefinition(
-        engine=EngineType.BLOCK,
-    ),
-
     # ---------------------------------------------------------
     # BUILDING ENGINE STYLES
     # ---------------------------------------------------------
