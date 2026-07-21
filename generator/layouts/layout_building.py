@@ -96,92 +96,69 @@ def compose_layout_building(
 
     from reportlab.pdfbase.pdfmetrics import getAscentDescent
 
-    project_root = Path (__file__).resolve ().parents [2]
+    project_root = Path(__file__).resolve().parents[2]
 
     cormorant_path = project_root / "Fonts" / "CormorantGaramond-SemiBold.ttf"
-    inter_path = project_root / "Fonts" / "Inter_18pt-ExtraLight.ttf"
-    centaurea_path = project_root / "Fonts" / "CentaureaDemo.ttf"
+    arsenal_path   = project_root / "Fonts" / "Arsenal-Regular.ttf"
 
-    pdfmetrics.registerFont (
-        TTFont ("CormorantSemiBold", str (cormorant_path))
-    )
-    pdfmetrics.registerFont (
-        TTFont ("InterExtraLight", str (inter_path))
-    )
-    
-    if centaurea_path.exists():
-        pdfmetrics.registerFont (
-            TTFont ("CentaureaDemoCustom", str (centaurea_path))
-        )
-        subtitle_font = "CentaureaDemoCustom"
-    else:
-        subtitle_font = "InterExtraLight"
+    pdfmetrics.registerFont(TTFont("CormorantSemiBold", str(cormorant_path)))
+    pdfmetrics.registerFont(TTFont("ArsenalRegular",    str(arsenal_path)))
 
     title_font = "CormorantSemiBold"
+    coord_font = "ArsenalRegular"
 
-    # Alsó margó teljes magassága
+    # Bottom passepartout height
     bottom_margin_height = inner_y
 
-    # Ennek 90%-át használjuk
-    usable_height = bottom_margin_height * 0.9
+    # Title size: keep existing ratio-based formula (unchanged)
+    title_size = (bottom_margin_height * 0.9) * 0.65
 
-    # Arányok
-    title_ratio = 0.65
-    subtitle_ratio = 0.25
-    gap_ratio = 0.10
+    # Coordinates: fixed 22 pt (≈ 22 px at 72 dpi)
+    coord_size = 22.0
 
-    title_size = usable_height * title_ratio
-    subtitle_size = usable_height * subtitle_ratio
-    line_gap = usable_height * gap_ratio
+    # Gap between title and coordinates: ~20 pt (≈ 20 px)
+    line_gap = 20.0
 
-    # ---- VALÓDI SZÖVEGMAGASSÁG (font metrics) ----
+    # ---- FONT METRICS ----
 
-    title_ascent, title_descent = getAscentDescent (title_font, title_size)
-    subtitle_ascent, subtitle_descent = getAscentDescent (subtitle_font, subtitle_size)
+    title_ascent, title_descent = getAscentDescent(title_font, title_size)
+    coord_ascent, coord_descent = getAscentDescent(coord_font, coord_size)
 
     title_real_height = title_ascent - title_descent
-    subtitle_real_height = subtitle_ascent - subtitle_descent
+    coord_real_height = coord_ascent - coord_descent
 
-    text_block_height = title_real_height + line_gap + subtitle_real_height
+    # ---- UNIFIED BLOCK: optically centered in bottom passepartout ----
+    # Mathematical center shifted down ~8% to compensate for visual top-heaviness.
 
-    # ---- BLOKK ALSÓ POZÍCIÓ (VALÓDI KÖZÉP) ----
+    text_block_height = title_real_height + line_gap + coord_real_height
+    optical_correction = bottom_margin_height * 0.08
+    text_block_bottom = (bottom_margin_height - text_block_height) / 2 - optical_correction
 
-    text_block_bottom = (bottom_margin_height - text_block_height) / 2
+    # Right edge aligned with map frame
+    right_x = width_pt - margin
 
-    # ---- TITLE ----
+    # ---- TITLE (unchanged: font, size, color, right-aligned) ----
 
-    c.setFillColor (title_color)
-    c.setFont (title_font, title_size)
+    c.setFillColor(title_color)
+    c.setFont(title_font, title_size)
 
-    title_text = title.upper ()
+    title_text = title.upper()
 
-    title_baseline_y = (
-              text_block_bottom
-              + subtitle_real_height
-              + line_gap
-              - title_descent
-    )
+    # baseline: measured from block bottom up through coord section + gap - descent
+    title_baseline_y = text_block_bottom + coord_real_height + line_gap - title_descent
 
-    c.drawCentredString (
-        width_pt / 2,
-        title_baseline_y,
-        title_text,
-    )
+    c.drawRightString(right_x, title_baseline_y, title_text)
 
-    # ---- SUBTITLE ----
+    # ---- COORDINATES: Arsenal Regular 22 pt, right-aligned ----
 
-    c.setFillColor (subtitle_color)
-    c.setFont (subtitle_font, subtitle_size)
+    c.setFillColor(subtitle_color)
+    c.setFont(coord_font, coord_size)
 
-    subtitle_text = subtitle.replace ("° N", "°N").replace ("° E", "°E")
+    coord_text = subtitle.replace("° N", "°N").replace("° E", "°E")
 
-    subtitle_baseline_y = text_block_bottom + subtitle_ascent
+    coord_baseline_y = text_block_bottom - coord_descent
 
-    c.drawCentredString (
-        width_pt / 2,
-        subtitle_baseline_y,
-        subtitle_text,
-    )
+    c.drawRightString(right_x, coord_baseline_y, coord_text)
 
     # ============================================================
     # FINALIZE
