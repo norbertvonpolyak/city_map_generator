@@ -20,7 +20,7 @@ from shapely.geometry import Point, box
 
 from generator.specs import ProductSpec
 from generator.styles import get_style_config, MaptoposterLineStyleConfig, BlockStyleConfig
-from generator.core.cache import load_or_build_geometry
+from generator.core.osm_bundle_cache import load_or_build_shared_osm_bundle
 
 
 # ---------------------------------------------------------------------------
@@ -242,8 +242,6 @@ def render_map_line(
     fig_h_in = map_height_cm / 2.54
     half_width_m, half_height_m = viewport_half_width_m, viewport_half_height_m
     extent_m = int(spec.extent_m)
-    dist_m = int(np.ceil((half_width_m**2 + half_height_m**2) ** 0.5)) + 300
-
     # -----------------------------------------------------------------------
     # CENTER + CLIP
     # -----------------------------------------------------------------------
@@ -261,60 +259,14 @@ def render_map_line(
     maxy = center_p.y + half_height_m
     clip_rect = box(minx, miny, maxx, maxy)
 
-    custom_filter = (
-        '["highway"~"motorway|motorway_link|trunk|trunk_link|primary|primary_link|'
-        'secondary|secondary_link|tertiary|tertiary_link|residential|unclassified|living_street|service"]'
-    )
-
     def _build_geometry():
-        G = ox.graph_from_point(
-            (center_lat, center_lon),
-            dist=dist_m,
-            custom_filter=custom_filter,
-            simplify=True,
-        )
-
-        edges = ox.graph_to_gdfs(G, nodes=False, edges=True)
+        edges = shared_bundle["edges_raw"]
         edges_p = ox.projection.project_gdf(edges)
         edges_p = gpd.clip(edges_p, gpd.GeoSeries([clip_rect], crs=edges_p.crs))
         edges_p = edges_p[~edges_p.is_empty]
 
-        clip_gdf = gpd.GeoDataFrame(geometry=[clip_rect], crs=edges_p.crs)
-        clip_wgs = clip_gdf.to_crs("EPSG:4326").geometry.iloc[0]
-
-        try:
-            water_raw = ox.features_from_polygon(
-                clip_wgs,
-                tags={
-                    "natural": ["water", "bay", "strait"],
-                    "water": True,
-                    "waterway": ["riverbank", "canal"],
-                    "landuse": ["basin", "reservoir"],
-                },
-            )
-        except Exception:
-            water_raw = ox.features_from_polygon(
-                clip_wgs,
-                tags={
-                    "natural": "water",
-                    "waterway": "riverbank",
-                },
-            )
-
-        try:
-            green_raw = ox.features_from_polygon(
-                clip_wgs,
-                tags={
-                    "leisure": ["park", "garden", "nature_reserve", "recreation_ground", "village_green"],
-                    "landuse": ["forest", "grass", "meadow", "recreation_ground", "village_green"],
-                    "natural": ["wood", "grassland", "scrub", "heath"],
-                },
-            )
-        except Exception:
-            green_raw = ox.features_from_polygon(
-                clip_wgs,
-                tags={"leisure": "park"},
-            )
+        water_raw = shared_bundle["water_raw"]
+        green_raw = shared_bundle["green_raw"]
 
         water_p = _prepare_polygon_layer(water_raw, edges_p.crs, clip_rect)
         green_p = _prepare_polygon_layer(green_raw, edges_p.crs, clip_rect)
@@ -329,22 +281,16 @@ def render_map_line(
             "green_p": green_p,
         }
 
-    cache_variant = (
-        f"geom_v3_hw{int(round(half_width_m))}_hh{int(round(half_height_m))}"
+    shared_bundle = load_or_build_shared_osm_bundle(
+        center_lat=center_lat,
+        center_lon=center_lon,
+        extent_m=extent_m,
+        half_width_m=half_width_m,
+        half_height_m=half_height_m,
+        use_cache=use_cache,
     )
 
-    geometry_data = (
-        load_or_build_geometry(
-            cache_prefix="line_maptoposter",
-            center_lat=center_lat,
-            center_lon=center_lon,
-            extent_m=extent_m,
-            cache_variant=cache_variant,
-            builder_func=_build_geometry,
-        )
-        if use_cache
-        else _build_geometry()
-    )
+    geometry_data = _build_geometry()
 
     edges_p = geometry_data["edges_p"]
     water_p = geometry_data["water_p"]

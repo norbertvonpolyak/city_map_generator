@@ -19,7 +19,7 @@ from osmnx._errors import InsufficientResponseError
 from shapely.geometry import Point, Polygon, MultiPolygon, box
 from shapely.ops import unary_union, polygonize
 
-from generator.core.cache import load_or_build_geometry
+from generator.core.osm_bundle_cache import load_or_build_shared_osm_bundle
 from generator.specs import ProductSpec
 from generator.styles import get_style_config, BuildingStyleConfig
 
@@ -130,8 +130,13 @@ def _mask_out_water(gdf: gpd.GeoDataFrame, water_geom):
     if gdf is None or len(gdf) == 0 or water_geom is None or water_geom.is_empty:
         return gdf
     clipped = gdf.copy()
-    clipped["geometry"] = clipped.geometry.apply(lambda geom: geom.difference(water_geom))
-    return clipped[~clipped.is_empty]
+    try:
+        clipped["geometry"] = clipped.geometry.apply(lambda geom: geom.difference(water_geom))
+        return clipped[~clipped.is_empty]
+    except Exception as e:
+        # Topology error: skip masking and return original
+        print(f"[WARNING] Water masking failed ({type(e).__name__}): {str(e)[:80]}. Skipping masking.")
+        return gdf
 
 
 def _plot_dotted_texture(
@@ -257,17 +262,7 @@ def render_map_building(
     clip_rect = box(minx, miny, maxx, maxy)
 
     def _build_geometry() -> dict[str, object]:
-
-        print(">>> Downloading roads...")
-
-        G = ox.graph_from_point(
-            (center_lat, center_lon),
-            dist=dist_m,
-            network_type=network_type_draw,
-            simplify=True,
-        )
-
-        edges = ox.graph_to_gdfs(G, nodes=False, edges=True)
+        edges = shared_bundle["edges_raw"]
 
         edges_p = ox.projection.project_gdf(edges)
 
@@ -291,53 +286,7 @@ def render_map_building(
         else:
             edges_p["road_class"] = "local"
 
-        print(">>> Roads ready")
-
-        if render_only_buildings:
-            tags = {
-                "building": True,
-                "building:part": True,
-            }
-        else:
-            tags = {
-
-                "building": True,
-                "building:part": True,
-
-                "landuse": [
-                    "grass","meadow","farmland","orchard","forest",
-                    "allotments","garden","recreation_ground",
-                    "village_green","cemetery",
-                    "industrial","commercial","retail",
-                    "education"
-                ],
-
-                "leisure": [
-                    "park","garden","pitch","sports_centre","stadium",
-                    "nature_reserve","playground","dog_park"
-                ],
-
-                "natural": [
-                    "water","wood","scrub","grassland","wetland",
-                    "heath","fell","beach","sand"
-                ],
-
-                "amenity": [
-                    "parking","grave_yard","school","college","university"
-                ],
-
-                "place": ["square"],
-
-                "highway": ["pedestrian"],
-            }
-
-        print(">>> Downloading unified features...")
-
-        gdf_all = ox.features_from_point(
-            (center_lat, center_lon),
-            tags=tags,
-            dist=dist_m,
-        )
+        gdf_all = shared_bundle["gdf_all_raw"]
 
         gdf_all = gdf_all[gdf_all.geometry.notnull()]
 
@@ -354,13 +303,7 @@ def render_map_building(
 
         trees_p = gpd.GeoDataFrame(geometry=[], crs=gdf_all_p.crs)
         if not render_only_buildings:
-            print(">>> Downloading trees...")
-
-            trees = ox.features_from_point(
-                (center_lat, center_lon),
-                tags={"natural": "tree"},
-                dist=dist_m,
-            )
+            trees = shared_bundle["trees_raw"]
 
             trees = trees[trees.geometry.notnull()]
 
@@ -373,13 +316,7 @@ def render_map_building(
 
         waterway_p = gpd.GeoDataFrame(geometry=[], crs=gdf_all_p.crs)
         if not render_only_buildings:
-            print(">>> Downloading waterways...")
-
-            waterway = ox.features_from_point(
-                (center_lat, center_lon),
-                tags={"waterway": True},
-                dist=dist_m,
-            )
+            waterway = shared_bundle["waterway_raw"]
 
             waterway = waterway[waterway.geometry.notnull()]
 
@@ -412,13 +349,7 @@ def render_map_building(
 
         railway_p = gpd.GeoDataFrame(geometry=[], crs=gdf_all_p.crs)
         if not render_only_buildings:
-            print(">>> Downloading railways...")
-
-            railway = ox.features_from_point(
-                (center_lat, center_lon),
-                tags={"railway": True},
-                dist=dist_m,
-            )
+            railway = shared_bundle["railway_raw"]
 
             railway = railway[railway.geometry.notnull()]
 
@@ -433,20 +364,7 @@ def render_map_building(
 
         paths_p = gpd.GeoDataFrame(geometry=[], crs=gdf_all_p.crs)
         if not render_only_buildings:
-            print(">>> Downloading paths...")
-
-            paths = ox.features_from_point(
-                (center_lat, center_lon),
-                tags={
-                    "highway": [
-                        "footway",
-                        "path",
-                        "track",
-                        "steps"
-                    ]
-                },
-                dist=dist_m,
-            )
+            paths = shared_bundle["paths_raw"]
 
             paths = paths[paths.geometry.notnull()]
 
@@ -465,46 +383,37 @@ def render_map_building(
 
         coast_water = None
         if not render_only_buildings:
-            print(">>> Downloading coastline...")
+            coast = shared_bundle["coast_raw"]
 
-            try:
+            if coast is None:
+                coast = gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
 
-                coast = ox.features_from_point(
-                    (center_lat, center_lon),
-                    tags={"natural": "coastline"},
-                    dist=dist_m,
+            coast = coast[coast.geometry.notnull()]
+
+            if len(coast) > 0:
+
+                coast_p = ox.projection.project_gdf(coast)
+
+                coast_p = gpd.clip(
+                    coast_p,
+                    gpd.GeoSeries([clip_rect], crs=coast_p.crs),
                 )
 
-                coast = coast[coast.geometry.notnull()]
+                coast_lines = coast_p.geometry
 
-                if len(coast) > 0:
+                water_polygons = list(polygonize(coast_lines))
 
-                    coast_p = ox.projection.project_gdf(coast)
+                if len(water_polygons) > 0:
 
-                    coast_p = gpd.clip(
-                        coast_p,
-                        gpd.GeoSeries([clip_rect], crs=coast_p.crs),
+                    coast_water = gpd.GeoDataFrame(
+                        geometry=water_polygons,
+                        crs=coast_p.crs,
                     )
 
-                    coast_lines = coast_p.geometry
-
-                    water_polygons = list(polygonize(coast_lines))
-
-                    if len(water_polygons) > 0:
-
-                        coast_water = gpd.GeoDataFrame(
-                            geometry=water_polygons,
-                            crs=coast_p.crs,
-                        )
-
-                        coast_water = gpd.clip(
-                            coast_water,
-                            gpd.GeoSeries([clip_rect], crs=coast_water.crs),
-                        )
-
-            except InsufficientResponseError:
-
-                print(">>> No coastline found in this area")
+                    coast_water = gpd.clip(
+                        coast_water,
+                        gpd.GeoSeries([clip_rect], crs=coast_water.crs),
+                    )
 
         return {
             "edges_p": edges_p,
@@ -517,18 +426,17 @@ def render_map_building(
             "bounds": (minx, maxx, miny, maxy),
         }
 
-    if use_cache:
-        geometry_data = load_or_build_geometry(
-            cache_prefix="building_v1_density",
-            center_lat=center_lat,
-            center_lon=center_lon,
-            extent_m=spec.extent_m,
-            cache_variant=f"{half_width_m:.2f}x{half_height_m:.2f}_{network_type_draw}",
-            builder_func=_build_geometry,
-        )
-    else:
-        print("[CACHE] Disabled: rebuilding geometry")
-        geometry_data = _build_geometry()
+    shared_bundle = load_or_build_shared_osm_bundle(
+        center_lat=center_lat,
+        center_lon=center_lon,
+        extent_m=spec.extent_m,
+        half_width_m=half_width_m,
+        half_height_m=half_height_m,
+        use_cache=use_cache,
+        include_building_features=True,
+    )
+
+    geometry_data = _build_geometry()
 
     edges_p = geometry_data["edges_p"]
     gdf_all_p = geometry_data["gdf_all_p"]

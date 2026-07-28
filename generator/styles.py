@@ -378,7 +378,7 @@ STYLES = {
 
         road="#6B5A48",
         road_style=RoadStyle(
-            base_width=1.785,
+            base_width=0.8925,
             multipliers={
                 "minor": 1.05,
                 "local": 1.75,

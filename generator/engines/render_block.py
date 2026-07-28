@@ -20,7 +20,7 @@ from shapely.ops import polygonize, unary_union
 
 from generator.specs import ProductSpec
 from generator.styles import get_style_config
-from generator.core.cache import load_or_build_geometry
+from generator.core.osm_bundle_cache import load_or_build_shared_osm_bundle
 
 
 @dataclass(frozen=True)
@@ -56,6 +56,9 @@ def _classify_road(hw: str) -> str:
 
     if hw in {"residential", "unclassified", "living_street"}:
         return "local"
+
+    if hw in {"pedestrian", "footway", "path", "steps"}:
+        return "pedestrian"
 
     return "minor"
 
@@ -117,14 +120,7 @@ def render_map_block(
 
         # ROADS
 
-        G = ox.graph_from_point(
-            (center_lat, center_lon),
-            dist=dist_m,
-            network_type="all",
-            simplify=True,
-        )
-
-        edges = ox.graph_to_gdfs(G, nodes=False, edges=True)
+        edges = shared_bundle["edges_raw"]
 
         edges_p = ox.projection.project_gdf(edges)
 
@@ -137,31 +133,7 @@ def render_map_block(
 
         # WATER (broader OSM tags for sea/harbor/basin coverage)
 
-        clip_gdf = gpd.GeoDataFrame(
-            geometry=[clip_rect],
-            crs=edges_p.crs
-        )
-
-        clip_wgs = clip_gdf.to_crs("EPSG:4326").geometry.iloc[0]
-
-        try:
-            water = ox.features_from_polygon(
-                clip_wgs,
-                tags={
-                    "natural": ["water", "bay", "strait"],
-                    "water": True,
-                    "waterway": ["riverbank", "canal"],
-                    "landuse": ["basin", "reservoir"],
-                }
-            )
-        except Exception:
-            water = ox.features_from_polygon(
-                clip_wgs,
-                tags={
-                    "natural": "water",
-                    "waterway": "riverbank"
-                }
-            )
+        water = shared_bundle["water_raw"]
 
         if water is None or len(water) == 0:
             water_p = gpd.GeoDataFrame(geometry=[], crs=edges_p.crs)
@@ -182,16 +154,7 @@ def render_map_block(
 
         # COASTLINE
 
-        try:
-
-            coast = ox.features_from_polygon(
-                clip_wgs,
-                tags={"natural": "coastline"}
-            )
-
-        except:
-
-            coast = None
+        coast = shared_bundle["coast_raw"]
 
         sea_poly = None
 
@@ -278,16 +241,7 @@ def render_map_block(
         # ISLAND OVERRIDE
         # Remove explicit island polygons from water surfaces so they are
         # always rendered as land parcels.
-        try:
-            islands = ox.features_from_polygon(
-                clip_wgs,
-                tags={
-                    "place": ["island", "islet"],
-                    "natural": "island",
-                },
-            )
-        except Exception:
-            islands = None
+        islands = shared_bundle["islands_raw"]
 
         if islands is not None and len(islands) > 0 and len(water_p) > 0:
             islands = islands[(~islands.geometry.isna()) & (~islands.geometry.is_empty)]
@@ -399,19 +353,16 @@ def render_map_block(
             "bounds": (minx, maxx, miny, maxy),
         }
 
-    if use_cache:
-        geometry_data = load_or_build_geometry(
-            # Bump cache key so previous misclassified geometry is not reused.
-            cache_prefix="block_v10_density",
-            center_lat=center_lat,
-            center_lon=center_lon,
-            extent_m=spec.extent_m,
-            cache_variant=f"{half_width_m:.2f}x{half_height_m:.2f}",
-            builder_func=_build_geometry,
-        )
-    else:
-        print("[CACHE] Disabled: rebuilding geometry")
-        geometry_data = _build_geometry()
+    shared_bundle = load_or_build_shared_osm_bundle(
+        center_lat=center_lat,
+        center_lon=center_lon,
+        extent_m=spec.extent_m,
+        half_width_m=half_width_m,
+        half_height_m=half_height_m,
+        use_cache=use_cache,
+    )
+
+    geometry_data = _build_geometry()
 
     cells = geometry_data["cells"]
     edges_p = geometry_data["roads"]

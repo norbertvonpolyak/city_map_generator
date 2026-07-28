@@ -36,6 +36,52 @@ def _generate_order_filename(order_id: str, spec: ProductSpec) -> str:
 
 
 # ==========================================================
+# VIEWPORT HELPER
+# ==========================================================
+
+def get_viewport_for_style(style_name: str, spec) -> tuple[float, float]:
+    """Return (half_width_m, half_height_m) for the given style and spec.
+
+    This replicates the layout computation from render_product so that callers
+    can pre-warm the OSM bundle cache for every unique viewport before rendering.
+    """
+    if style_name not in STYLE_REGISTRY:
+        raise ValueError(f"Unknown style: {style_name}")
+
+    style_cfg = get_style_config(style_name)
+
+    if isinstance(style_cfg, MaptoposterLineStyleConfig):
+        uniform_margins = style_cfg.layout.uniform_margins
+    else:
+        uniform_margins = STYLE_REGISTRY[style_name].engine == EngineType.LINE
+
+    bottom_margin_ratio = None
+    layout_config = None
+
+    if isinstance(style_cfg, MaptoposterLineStyleConfig):
+        bottom_margin_ratio = style_cfg.layout.bottom_margin_ratio
+        if style_name == "vintage_atlas":
+            layout_config = {
+                'side_margin_ratio': style_cfg.layout.side_margin_ratio,
+                'bottom_margin_multiplier': style_cfg.layout.bottom_margin_multiplier,
+                'text_vertical_centering': style_cfg.layout.text_vertical_centering,
+                'title_above_coordinates': style_cfg.layout.title_above_coordinates,
+            }
+    elif style_name == "old_time_fantasy" and STYLE_REGISTRY[style_name].engine == EngineType.LINE:
+        bottom_margin_ratio = 0.15
+
+    layout = build_poster_layout(
+        spec.width_cm,
+        spec.height_cm,
+        uniform_margins=uniform_margins,
+        bottom_margin_ratio=bottom_margin_ratio,
+        style_name=style_name,
+        layout_config=layout_config,
+    )
+    return layout.map_viewport_half_sizes_m(spec.extent_m)
+
+
+# ==========================================================
 # MAIN DISPATCHER
 # ==========================================================
 
