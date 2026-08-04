@@ -1,9 +1,6 @@
 from __future__ import annotations
 
 import math
-import os
-import time
-from itertools import count
 
 import geopandas as gpd
 import osmnx as ox
@@ -19,52 +16,7 @@ _ROAD_CUSTOM_FILTER = (
     'pedestrian|footway|path|steps"]'
 )
 
-# Default Overpass endpoints used for round-robin rotation.
-OVERPASS_URLS = [
-    "https://overpass-api.de/api",
-]
-
-_ENDPOINT_ROTATION_COUNTER = count()
-
-
-def _get_overpass_endpoints() -> list[str]:
-    endpoints_env = os.getenv("OSM_OVERPASS_ENDPOINTS", "").strip()
-    if endpoints_env:
-        return [e.strip() for e in endpoints_env.split(",") if e.strip()]
-    return OVERPASS_URLS
-
-
-def _rotated_endpoints(endpoints: list[str]) -> list[str]:
-    if not endpoints:
-        return []
-    start_idx = next(_ENDPOINT_ROTATION_COUNTER) % len(endpoints)
-    return endpoints[start_idx:] + endpoints[:start_idx]
-
-
-def _run_with_overpass_fallback(query_func, query_label: str):
-    endpoints = _rotated_endpoints(_get_overpass_endpoints())
-    if not endpoints:
-        raise RuntimeError("No Overpass endpoints configured. Set OSM_OVERPASS_ENDPOINTS or OVERPASS_URLS.")
-
-    original_overpass_url = ox.settings.overpass_url
-    last_error = None
-
-    for endpoint in endpoints:
-        try:
-            ox.settings.overpass_url = endpoint
-            result = query_func()
-            ox.settings.overpass_url = original_overpass_url
-            return result
-        except Exception as error:
-            last_error = error
-            print(f"[OSM] {query_label} failed via {endpoint}: {error}")
-            time.sleep(0.8)
-            continue
-
-    ox.settings.overpass_url = original_overpass_url
-    if last_error is not None:
-        raise last_error
-    raise RuntimeError(f"[OSM] {query_label} failed without a captured exception")
+ox.settings.requests_timeout = 300
 
 
 def _build_shared_osm_bundle(
@@ -77,14 +29,11 @@ def _build_shared_osm_bundle(
 ) -> dict[str, object]:
     dist_m = int(math.ceil(math.sqrt(half_width_m**2 + half_height_m**2))) + 300
 
-    graph = _run_with_overpass_fallback(
-        lambda: ox.graph_from_point(
-            (center_lat, center_lon),
-            dist=dist_m,
-            custom_filter=_ROAD_CUSTOM_FILTER,
-            simplify=True,
-        ),
-        "graph_from_point",
+    graph = ox.graph_from_point(
+        (center_lat, center_lon),
+        dist=dist_m,
+        custom_filter=_ROAD_CUSTOM_FILTER,
+        simplify=True,
     )
 
     edges_raw = ox.graph_to_gdfs(graph, nodes=False, edges=True)
@@ -154,102 +103,75 @@ def _build_shared_osm_bundle(
             "highway": ["pedestrian", "footway", "path", "track", "steps"],
         }
 
-        gdf_all_raw = _run_with_overpass_fallback(
-            lambda: ox.features_from_point(
-                (center_lat, center_lon),
-                tags=feature_tags,
-                dist=dist_m,
-            ),
-            "features_from_point:feature_tags",
-        )
-
-        trees_raw = _run_with_overpass_fallback(
-            lambda: ox.features_from_point(
-                (center_lat, center_lon),
-                tags={"natural": "tree"},
-                dist=dist_m,
-            ),
-            "features_from_point:trees",
-        )
-
-        waterway_raw = _run_with_overpass_fallback(
-            lambda: ox.features_from_point(
-                (center_lat, center_lon),
-                tags={"waterway": True},
-                dist=dist_m,
-            ),
-            "features_from_point:waterway",
-        )
-
-        railway_raw = _run_with_overpass_fallback(
-            lambda: ox.features_from_point(
-                (center_lat, center_lon),
-                tags={"railway": True},
-                dist=dist_m,
-            ),
-            "features_from_point:railway",
-        )
-
-        paths_raw = _run_with_overpass_fallback(
-            lambda: ox.features_from_point(
-                (center_lat, center_lon),
-                tags={"highway": ["footway", "path", "track", "steps"]},
-                dist=dist_m,
-            ),
-            "features_from_point:paths",
-        )
-
-    water_raw = _run_with_overpass_fallback(
-        lambda: ox.features_from_point(
+        gdf_all_raw = ox.features_from_point(
             (center_lat, center_lon),
-            tags={
-                "natural": ["water", "bay", "strait"],
-                "water": True,
-                "waterway": ["riverbank", "canal"],
-                "landuse": ["basin", "reservoir"],
-            },
+            tags=feature_tags,
             dist=dist_m,
-        ),
-        "features_from_point:water",
+        )
+
+        trees_raw = ox.features_from_point(
+            (center_lat, center_lon),
+            tags={"natural": "tree"},
+            dist=dist_m,
+        )
+
+        waterway_raw = ox.features_from_point(
+            (center_lat, center_lon),
+            tags={"waterway": True},
+            dist=dist_m,
+        )
+
+        railway_raw = ox.features_from_point(
+            (center_lat, center_lon),
+            tags={"railway": True},
+            dist=dist_m,
+        )
+
+        paths_raw = ox.features_from_point(
+            (center_lat, center_lon),
+            tags={"highway": ["footway", "path", "track", "steps"]},
+            dist=dist_m,
+        )
+
+    water_raw = ox.features_from_point(
+        (center_lat, center_lon),
+        tags={
+            "natural": ["water", "bay", "strait"],
+            "water": True,
+            "waterway": ["riverbank", "canal"],
+            "landuse": ["basin", "reservoir"],
+        },
+        dist=dist_m,
     )
 
-    green_raw = _run_with_overpass_fallback(
-        lambda: ox.features_from_point(
-            (center_lat, center_lon),
-            tags={
-                "leisure": ["park", "garden", "nature_reserve", "recreation_ground", "village_green"],
-                "landuse": ["forest", "grass", "meadow", "recreation_ground", "village_green"],
-                "natural": ["wood", "grassland", "scrub", "heath"],
-            },
-            dist=dist_m,
-        ),
-        "features_from_point:green",
+    green_raw = ox.features_from_point(
+        (center_lat, center_lon),
+        tags={
+            "leisure": ["park", "garden", "nature_reserve", "recreation_ground", "village_green"],
+            "landuse": ["forest", "grass", "meadow", "recreation_ground", "village_green"],
+            "natural": ["wood", "grassland", "scrub", "heath"],
+        },
+        dist=dist_m,
     )
 
     try:
-        coast_raw = _run_with_overpass_fallback(
-            lambda: ox.features_from_point(
-                (center_lat, center_lon),
-                tags={"natural": "coastline"},
-                dist=dist_m,
-            ),
-            "features_from_point:coast",
+        coast_raw = ox.features_from_point(
+            (center_lat, center_lon),
+            tags={"natural": "coastline"},
+            dist=dist_m,
         )
     except InsufficientResponseError:
         print("[OSM] Nincs tengerpart ezen a területen – coast_raw kihagyva.")
         coast_raw = None
 
     try:
-        islands_raw = _run_with_overpass_fallback(
-            lambda: ox.features_from_point(
-                (center_lat, center_lon),
-                tags={
-                    "place": ["island", "islet"],
-                    "natural": "island",
-                },
-                dist=dist_m,
-            ),
-            "features_from_point:islands",
+        islands_raw = ox.features_from_point(
+            (center_lat, center_lon),
+            tags={
+                "place": ["island", "islet"],
+                "natural": "island",
+            },
+            dist=dist_m,
         )
     except InsufficientResponseError:
         print("[OSM] Nincsenek szigetek ezen a területen – islands_raw kihagyva.")

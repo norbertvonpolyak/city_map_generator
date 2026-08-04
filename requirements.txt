@@ -18,3 +18,5 @@ scipy==1.17.0
 skyfield==1.53
 geopy==2.4.1
 timezonefinder==6.5.7
+requests==2.34.2
+urllib3==2.7.0
