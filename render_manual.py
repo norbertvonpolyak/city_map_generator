@@ -28,15 +28,37 @@ from __future__ import annotations
 #  PARAMÉTEREK – IDE ÍRD ÁT!
 # =============================================================================
 
-CITY_NAME   = "PRAGUE"          # Cím a poszteren (és a fájlnévben)
-LAT         = 50.0903      # Szélességi fok
-LON         = 14.4177             # Hosszúsági fok
+CITY_NAME   = "BOURNEMOUTH"          # Cím a poszteren (és a fájlnévben)
+LAT         = 50.7195      # Szélességi fok
+LON         = -1.8794            # Hosszúsági fok
 EXTENT_M    = 5000                # Fél-extent méterben (pl. 2000 = ~4 km átmérő)
 SIZE_KEY    = "50x70"             # Plakátméret kulcs (cm)
-STYLE       = "luxury_gold"    # Stílus neve (lásd fent)
+STYLE       = "urban_modern"    # Stílus neve (lásd fent)
 SUBTITLE    = None                # None → automatikus koordináta felirat
 OUTPUT_DIR_BASE = "output"        # Kimeneti mappa (a project gyökéréhez képest)
-USE_CACHE   = True                # OSM gyorsítótár használata
+USE_CACHE   = True               # OSM gyorsítótár használata
+
+""" CITY_NAME   = "STOCKHOLM"          # Cím a poszteren (és a fájlnévben)
+LAT         = 59.3290      # Szélességi fok
+LON         = 18.0652            # Hosszúsági fok
+EXTENT_M    = 5000                # Fél-extent méterben (pl. 2000 = ~4 km átmérő)
+SIZE_KEY    = "50x70"             # Plakátméret kulcs (cm)
+STYLE       = "midnight_blue"    # Stílus neve (lásd fent)
+SUBTITLE    = None                # None → automatikus koordináta felirat
+OUTPUT_DIR_BASE = "output"        # Kimeneti mappa (a project gyökéréhez képest)
+USE_CACHE   = True               # OSM gyorsítótár használata """
+
+
+""" CITY_NAME   = "HELSINKI"          # Cím a poszteren (és a fájlnévben)
+LAT         = 60.1710      # Szélességi fok
+LON         = 24.9375            # Hosszúsági fok
+EXTENT_M    = 5000                # Fél-extent méterben (pl. 2000 = ~4 km átmérő)
+SIZE_KEY    = "50x70"             # Plakátméret kulcs (cm)
+STYLE       = "vintage_atlas"    # Stílus neve (lásd fent)
+SUBTITLE    = None                # None → automatikus koordináta felirat
+OUTPUT_DIR_BASE = "output"        # Kimeneti mappa (a project gyökéréhez képest)
+USE_CACHE   = True               # OSM gyorsítótár használata """
+
 
 # =============================================================================
 # (Alatta nem kell módosítani, hacsak nem tudod, mit csinálsz.)

@@ -381,9 +381,9 @@ STYLES = {
             base_width=0.8925,
             multipliers={
                 "minor": 1.05,
-                "local": 1.75,
-                "arterial": 2.7,
-                "highway": 4.2,
+                "local": 1.35,
+                "arterial": 2.3,
+                "highway": 3.4,
             },
         ),
     ),

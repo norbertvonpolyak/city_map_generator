@@ -415,6 +415,26 @@ def render_map_building(
                         gpd.GeoSeries([clip_rect], crs=coast_water.crs),
                     )
 
+        islands_p = gpd.GeoDataFrame(geometry=[], crs=gdf_all_p.crs)
+        if not render_only_buildings:
+            islands = shared_bundle.get("islands_raw")
+
+            if islands is not None:
+                islands = islands[islands.geometry.notnull()]
+
+                if len(islands) > 0:
+                    islands_p = ox.projection.project_gdf(islands)
+
+                    islands_p = gpd.clip(
+                        islands_p,
+                        gpd.GeoSeries([clip_rect], crs=islands_p.crs),
+                    )
+
+                    islands_p = islands_p[~islands_p.is_empty]
+                    islands_p = islands_p[
+                        islands_p.geom_type.isin(["Polygon", "MultiPolygon"])
+                    ]
+
         return {
             "edges_p": edges_p,
             "gdf_all_p": gdf_all_p,
@@ -423,6 +443,7 @@ def render_map_building(
             "railway_p": railway_p,
             "paths_p": paths_p,
             "coast_water": coast_water,
+            "islands_p": islands_p,
             "bounds": (minx, maxx, miny, maxy),
         }
 
@@ -445,6 +466,7 @@ def render_map_building(
     railway_p = geometry_data["railway_p"]
     paths_p = geometry_data["paths_p"]
     coast_water = geometry_data["coast_water"]
+    islands_p = geometry_data["islands_p"]
     minx, maxx, miny, maxy = geometry_data["bounds"]
 
     draw_green_layers = (not render_only_buildings) and (palette_name != "mono_black")
@@ -682,6 +704,16 @@ def render_map_building(
                     zorder=0.08,
                     rng=texture_rng,
                 )
+
+        # islands in rivers/water
+        if len(islands_p) > 0:
+            islands_p.plot(
+                ax=ax,
+                color=style_cfg.background,
+                edgecolor="none",
+                linewidth=0,
+                zorder=1.5,
+            )
 
         if len(beach_p) > 0:
             beach_p = _mask_out_water(beach_p, water_mask_geom)
