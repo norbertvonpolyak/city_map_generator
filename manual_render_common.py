@@ -277,13 +277,16 @@ def resolve_render_context(config: ManualRenderConfig, style_name: str) -> Resol
     local_osm_display = "n/a"
     if source == "local" and config.local_auto_fit_to_file:
         local_osm_file = _resolve_local_osm_file_path(config)
+        os.environ["OSM_LOCAL_FILE"] = str(local_osm_file)
         auto_lat, auto_lon, auto_extent = _auto_fit_center_extent_from_osm(config, style_name, local_osm_file)
         effective_lat = auto_lat
         effective_lon = auto_lon
         effective_extent_m = auto_extent
         local_osm_display = str(local_osm_file)
     elif source == "local":
-        local_osm_display = config.local_osm_file or "(latest from OSM dir)"
+        local_osm_file = _resolve_local_osm_file_path(config)
+        os.environ["OSM_LOCAL_FILE"] = str(local_osm_file)
+        local_osm_display = str(local_osm_file)
 
     effective_use_cache = config.use_cache if source == "overpass" else config.local_use_cache
     output_dir = _SCRIPT_DIR / config.output_dir_base

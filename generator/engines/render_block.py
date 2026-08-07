@@ -70,71 +70,74 @@ def _deterministic_color(geom, palette):
     return palette[idx]
 
 
-def _filter_pier_areas(gdf: gpd.GeoDataFrame | None) -> gpd.GeoDataFrame:
-    if gdf is None or len(gdf) == 0 or "man_made" not in gdf.columns:
-        return gpd.GeoDataFrame(geometry=[], crs=getattr(gdf, "crs", None))
-    man_made = gdf["man_made"].fillna("").astype(str).str.lower()
-    return gdf[man_made.eq("pier")].copy()
+def _assert_polygon_fill_layer(layer: gpd.GeoDataFrame | None, layer_name: str, engine_name: str) -> None:
+    if layer is None or len(layer) == 0:
+        return
+    allowed_types = {"Polygon", "MultiPolygon"}
+    geom_types = set(layer.geom_type.dropna().astype(str).tolist())
+    disallowed = sorted(geom_types - allowed_types)
+    if disallowed:
+        raise ValueError(
+            f"[{engine_name}] Polygon-only water pipeline violation in {layer_name}: "
+            f"found disallowed geometry types: {', '.join(disallowed)}"
+        )
 
 
-def _buffer_waterways_to_polygons(waterway_gdf: gpd.GeoDataFrame, target_crs) -> gpd.GeoDataFrame:
-    if waterway_gdf is None or len(waterway_gdf) == 0:
-        return gpd.GeoDataFrame(geometry=[], crs=target_crs)
+def _assert_same_crs(left: gpd.GeoDataFrame, right: gpd.GeoDataFrame, context: str) -> None:
+    if left.crs is None or right.crs is None:
+        raise ValueError(f"[block] CRS check failed in {context}: one of the layers has no CRS")
+    if left.crs != right.crs:
+        raise ValueError(f"[block] CRS mismatch in {context}: {left.crs} != {right.crs}")
 
-    width_map = {
-        "river": 85.0,
-        "canal": 24.0,
-        "stream": 6.0,
-        "ditch": 3.0,
-        "drain": 2.5,
-        "dock": 22.0,
-    }
 
-    def _parse_width_m(value) -> float | None:
-        if value is None:
-            return None
-        text = str(value).strip().lower()
-        if not text or text in {"nan", "none"}:
-            return None
-        text = text.replace(",", ".")
-        for suffix in ("meters", "meter", "metres", "metre", "m"):
-            if text.endswith(suffix):
-                text = text[: -len(suffix)].strip()
-                break
-        try:
-            parsed = float(text)
-        except ValueError:
-            return None
-        if parsed <= 0:
-            return None
-        return parsed / 2.0
+def _validate_or_repair_polygons(layer: gpd.GeoDataFrame, layer_name: str) -> gpd.GeoDataFrame:
+    cleaned = layer[(~layer.geometry.isna()) & (~layer.geometry.is_empty)].copy()
+    cleaned = cleaned[cleaned.geom_type.isin(["Polygon", "MultiPolygon"])].copy()
 
-    waterways = waterway_gdf[(~waterway_gdf.geometry.isna()) & (~waterway_gdf.geometry.is_empty)].to_crs(target_crs).copy()
-    waterways = waterways[waterways.geom_type.isin(["LineString", "MultiLineString", "Polygon", "MultiPolygon"])]
-    if len(waterways) == 0:
-        return gpd.GeoDataFrame(geometry=[], crs=target_crs)
+    if len(cleaned) == 0:
+        return cleaned
 
-    line_mask = waterways.geom_type.isin(["LineString", "MultiLineString"])
-    polygons = []
+    invalid_mask = ~cleaned.geometry.is_valid
+    if invalid_mask.any():
+        # Deterministic repair for self-intersections and ring issues.
+        cleaned.loc[invalid_mask, "geometry"] = cleaned.loc[invalid_mask, "geometry"].buffer(0)
+        cleaned = cleaned[(~cleaned.geometry.isna()) & (~cleaned.geometry.is_empty)].copy()
+        cleaned = cleaned[cleaned.geom_type.isin(["Polygon", "MultiPolygon"])].copy()
 
-    if line_mask.any():
-        line_waterways = waterways[line_mask].copy()
-        line_waterways["_water_width"] = 10.0
-        if "waterway" in line_waterways.columns:
-            line_waterways["_water_width"] = line_waterways["waterway"].fillna("").astype(str).str.lower().map(width_map).fillna(line_waterways["_water_width"])
-        if "width" in line_waterways.columns:
-            parsed_widths = line_waterways["width"].apply(_parse_width_m)
-            line_waterways["_water_width"] = parsed_widths.combine_first(line_waterways["_water_width"])
-        polygons.extend(line_waterways.apply(lambda row: row.geometry.buffer(float(row["_water_width"])), axis=1).tolist())
+    invalid_after = ~cleaned.geometry.is_valid
+    if invalid_after.any():
+        raise ValueError(
+            f"[block] Invalid geometries remain in {layer_name} after repair: {int(invalid_after.sum())}"
+        )
 
-    if (~line_mask).any():
-        polygons.extend(waterways[~line_mask].geometry.tolist())
+    _assert_polygon_fill_layer(cleaned, layer_name, "block")
+    return cleaned
 
-    polygons = [geom for geom in polygons if geom is not None and not geom.is_empty]
-    if not polygons:
-        return gpd.GeoDataFrame(geometry=[], crs=target_crs)
 
-    return gpd.GeoDataFrame(geometry=polygons, crs=target_crs)
+def _assert_no_land_water_overlap(land: gpd.GeoDataFrame, water_union, tolerance_area: float = 1e-6) -> None:
+    if land is None or len(land) == 0 or water_union is None or water_union.is_empty:
+        return
+
+    land_union = unary_union(list(land.geometry.values))
+    overlap = land_union.intersection(water_union)
+    overlap_area = 0.0 if overlap.is_empty else float(overlap.area)
+    if overlap_area > tolerance_area:
+        raise ValueError(
+            f"[block] land_masked overlaps water_surface: overlap area={overlap_area:.6f}"
+        )
+
+
+def _log_layer_stats(layer: gpd.GeoDataFrame, layer_name: str) -> None:
+    if len(layer) == 0:
+        print(f"[block][water-debug] {layer_name}: 0 features")
+        return
+    type_counts = layer.geom_type.value_counts().to_dict()
+    poly_count = int(type_counts.get("Polygon", 0))
+    mpoly_count = int(type_counts.get("MultiPolygon", 0))
+    print(
+        f"[block][water-debug] {layer_name}: total={len(layer)} "
+        f"Polygon={poly_count} MultiPolygon={mpoly_count} types={type_counts}"
+    )
 
 def render_map_block(
     *,
@@ -167,6 +170,7 @@ def render_map_block(
 
     half_height_m = viewport_half_height_m
     half_width_m = viewport_half_width_m
+    water_debug = os.getenv("MAPCANVAS_WATER_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"}
 
     dist_m = int(math.ceil(math.sqrt(half_width_m**2 + half_height_m**2))) + 300
 
@@ -220,23 +224,10 @@ def render_map_block(
                 gpd.GeoSeries([clip_rect], crs=edges_p.crs)
             )
 
-        exact_water_mode = os.getenv("OSM_LOCAL_EXACT_WATER", "").strip().lower() in {"1", "true", "yes", "on"}
-        use_waterway_fallback = (not exact_water_mode) or len(water_p) == 0
-        if use_waterway_fallback:
-            waterway = shared_bundle.get("waterway_raw")
-            waterway_p = _buffer_waterways_to_polygons(waterway, edges_p.crs)
-            if len(waterway_p) > 0:
-                waterway_p = gpd.clip(
-                    waterway_p,
-                    gpd.GeoSeries([clip_rect], crs=edges_p.crs)
-                )
-                if len(water_p) > 0:
-                    water_p = gpd.GeoDataFrame(
-                        geometry=list(water_p.geometry) + list(waterway_p.geometry),
-                        crs=edges_p.crs,
-                    )
-                else:
-                    water_p = waterway_p
+        # Polygon-only water pipeline: line geometries never feed filled water.
+        water_p = _validate_or_repair_polygons(water_p, "water_p")
+        if water_debug:
+            _log_layer_stats(water_p, "water_p_after_clip")
 
         # COASTLINE
 
@@ -355,21 +346,19 @@ def render_map_block(
                     water_p.geom_type.isin(["Polygon", "MultiPolygon"])
                 ]
 
-        # Remove tiny artifacts but keep medium harbor fragments.
+        water_union = unary_union(list(water_p.geometry.values)) if len(water_p) > 0 else None
+        water_surface = gpd.GeoDataFrame(geometry=[], crs=edges_p.crs)
+        if water_union is not None and (not water_union.is_empty):
+            water_surface = gpd.GeoDataFrame(geometry=[water_union], crs=edges_p.crs)
+            water_surface = _validate_or_repair_polygons(water_surface, "water_surface")
+            if water_debug:
+                _log_layer_stats(water_surface, "water_surface_render")
 
-        large_water = water_p[water_p.area > 300]
-
-        # POLYGONIZE INPUT
+        # POLYGONIZE INPUT (roads + frame only)
 
         boundary = clip_rect.boundary
 
         lines = list(edges_p.geometry.values) + [boundary]
-
-        if len(large_water) > 0:
-
-            water_union = unary_union(large_water.geometry)
-
-            lines += [water_union.boundary]
 
         merged = unary_union(lines)
 
@@ -385,31 +374,26 @@ def render_map_block(
             gpd.GeoSeries([clip_rect], crs=cells.crs)
         )
 
-        water_union = unary_union(large_water.geometry) if len(large_water) > 0 else None
-        water_surface = gpd.GeoDataFrame(geometry=[], crs=edges_p.crs)
-        if water_union is not None and not water_union.is_empty:
-            water_surface = gpd.GeoDataFrame(
-                geometry=[water_union],
-                crs=edges_p.crs,
+        land_cells = cells.copy()
+        if len(water_surface) > 0:
+            _assert_same_crs(land_cells, water_surface, "land_mask_difference")
+            water_mask_geom = water_surface.geometry.iloc[0]
+            land_cells["geometry"] = land_cells.geometry.apply(
+                lambda geom: geom.difference(water_mask_geom)
             )
+            land_cells = _validate_or_repair_polygons(land_cells, "land_masked")
+            _assert_no_land_water_overlap(land_cells, water_mask_geom)
 
-        water_structures = shared_bundle.get("water_structures_raw")
-        pier_areas = _filter_pier_areas(water_structures)
-        pier_p = gpd.GeoDataFrame(geometry=[], crs=edges_p.crs)
-        if len(pier_areas) > 0:
-            pier_p = pier_areas.to_crs(edges_p.crs)
-            pier_p = pier_p[pier_p.geom_type.isin(["Polygon", "MultiPolygon"])]
-            if len(pier_p) > 0:
-                pier_p = gpd.clip(
-                    pier_p,
-                    gpd.GeoSeries([clip_rect], crs=edges_p.crs)
-                )
+        if water_debug:
+            _log_layer_stats(cells, "cells_after_polygonize")
+            _log_layer_stats(land_cells, "land_masked")
+            if len(water_surface) > 0:
+                print("[block][water-debug] water_surface is rendered directly from polygon union (not polygonized cells)")
 
         return {
-            "cells": cells,
-            "roads": edges_p,
+            "land_cells": land_cells,
             "water_surface": water_surface,
-            "pier_p": pier_p,
+            "roads": edges_p,
             "bounds": (minx, maxx, miny, maxy),
         }
 
@@ -420,15 +404,13 @@ def render_map_block(
         half_width_m=half_width_m,
         half_height_m=half_height_m,
         use_cache=use_cache,
-        include_building_features=True,
     )
 
     geometry_data = _build_geometry()
 
-    cells = geometry_data["cells"]
-    edges_p = geometry_data["roads"]
+    land_cells = geometry_data["land_cells"]
     water_surface = geometry_data["water_surface"]
-    pier_p = geometry_data["pier_p"]
+    edges_p = geometry_data["roads"]
 
     minx, maxx, miny, maxy = geometry_data["bounds"]
 
@@ -437,13 +419,8 @@ def render_map_block(
         dpi=300
     )
 
-    land_cells = cells.copy()
     if len(water_surface) > 0:
-        water_union = water_surface.geometry.iloc[0]
-        land_cells["geometry"] = land_cells.geometry.apply(lambda geom: geom.difference(water_union))
-        land_cells = land_cells[(~land_cells.geometry.isna()) & (~land_cells.geometry.is_empty)]
-        land_cells = land_cells[land_cells.geom_type.isin(["Polygon", "MultiPolygon"])]
-
+        _assert_polygon_fill_layer(water_surface, "water_surface", "block")
         water_surface.plot(
             ax=ax,
             color=style_cfg.water,
@@ -462,15 +439,6 @@ def render_map_block(
         edgecolor="none",
         zorder=2
     )
-
-    if len(pier_p) > 0:
-        pier_p.plot(
-            ax=ax,
-            color=style_cfg.road,
-            edgecolor="none",
-            alpha=0.92,
-            zorder=2.4,
-        )
 
     base_width = style_cfg.road_style.base_width
     extent_scale = _road_width_scale_for_extent(spec.extent_m)

@@ -26,18 +26,18 @@ from manual_render_common import ManualRenderConfig, get_all_styles, render_styl
 
 DATA_SOURCE = "local"
 
-CITY_NAME = "STOCKHOLM"
+CITY_NAME = "BUDAPEST"
 SIZE_KEY = "50x70"
 SUBTITLE = None
 OUTPUT_DIR_BASE = "output"
 USE_CACHE = True
 
-LOCAL_OSM_FILE = "input/osm/Stockholm_2.osm"
+LOCAL_OSM_FILE = "input/osm/Budapest.osm"
 LOCAL_OSM_INPUT_DIR = "input/osm"
 LOCAL_AUTO_FIT_TO_FILE = True
 LOCAL_FIT_MARGIN = 0.90
-LOCAL_LAT = 59.3293
-LOCAL_LON = 18.0686
+LOCAL_LAT = 47.4979
+LOCAL_LON = 19.0402     
 LOCAL_EXTENT_M = 5000
 LOCAL_USE_CACHE = True
 LOCAL_RENDER_ALL_OBJECTS = False

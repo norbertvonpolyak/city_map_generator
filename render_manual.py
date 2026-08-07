@@ -35,20 +35,20 @@ DATA_SOURCE = "local"
 # KÖZÖS PARAMÉTEREK
 # --------------------------------------------------------------------------- #
 
-CITY_NAME = "HELSINKI"            # Cim a poszteren (es a fajlnevben)
+CITY_NAME = "BUDAPEST"            # Cim a poszteren (es a fajlnevben)
 SIZE_KEY = "50x70"                # Plakatmeret kulcs (cm)
-STYLE = "vintage_atlas"           # Stilus neve (lasd fent)
+STYLE = "urban_modern"           # Stilus neve (lasd fent)
 SUBTITLE = None                    # None -> automatikus koordinata felirat
 OUTPUT_DIR_BASE = "output"        # Kimeneti mappa (a project gyokerehez kepest)
-USE_CACHE = True                   # OSM gyorsitotar hasznalata
+USE_CACHE = False                   # OSM gyorsitotar hasznalata
 
 # --------------------------------------------------------------------------- #
 # OVERPASS / API MÓD PARAMÉTEREI
 # Csak akkor számítanak, ha DATA_SOURCE = "overpass"
 # --------------------------------------------------------------------------- #
 
-API_LAT = 44.8378                  # Szelessegi fok
-API_LON = -0.5792                  # Hosszusagi fok
+API_LAT = 47.4979                  # Szelessegi fok
+API_LON = 19.0402                  # Hosszusagi fok
 API_EXTENT_M = 5000                # Fel-extent meterben
 
 # --------------------------------------------------------------------------- #
@@ -58,8 +58,7 @@ API_EXTENT_M = 5000                # Fel-extent meterben
 
 # Ha None, akkor az input/osm mappabol a legfrissebb *.osm vagy *.osm.xml lesz hasznalva.
 # Ha megadod, lehet relativ (projecthez kepest) vagy abszolut utvonal.
-LOCAL_OSM_FILE = "input/osm/Helsinki.osm"
-
+LOCAL_OSM_FILE = None
 # Ide mentsd a kezzel letoltott XML fajlokat:
 #   city_map_generator/input/osm/
 LOCAL_OSM_INPUT_DIR = "input/osm"
@@ -70,10 +69,10 @@ LOCAL_AUTO_FIT_TO_FILE = True
 LOCAL_FIT_MARGIN = 0.90  # 0..1, kisebb = biztosabb peremhagyás
 
 # Kezi local center/extent csak akkor szamit, ha LOCAL_AUTO_FIT_TO_FILE = False
-LOCAL_LAT = 60.1710 
-LOCAL_LON = 24.9375
+LOCAL_LAT = 59.3293
+LOCAL_LON = 18.0686
 LOCAL_EXTENT_M = 5000
-LOCAL_USE_CACHE = True             # Local mod cache: True=ON, False=OFF
+LOCAL_USE_CACHE = False             # Local mod cache: True=ON, False=OFF
 
 # Local extra render opciok
 LOCAL_RENDER_ALL_OBJECTS = False    # Local XML-bol minel tobb objektum betoltese/rajzolasa
