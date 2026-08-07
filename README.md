@@ -751,6 +751,220 @@ This reproduces the exact debugging path used for the v10 fix.
 
 ---
 
+## Issue: River Rendered as Oversized Blob in Local Exact-Water Mode (v11 Porto Fix)
+
+### Problem Description
+
+In Porto (and potentially other river cities), local XML + exact-water enrichment
+produced a blue river, but its geometry could still look too wide or "inflated"
+when `waterway` line fallback polygons were merged on top of already-available
+water surface polygons.
+
+Visual symptom: the river appears as a large, coarse, uniform-width polygon
+instead of following the real riverbanks.
+
+### Root Cause
+
+The block engine had two water sources:
+
+1. polygonal water surfaces (`water_raw`)
+2. buffered `waterway` lines (`waterway_raw`)
+
+Even in local exact-water mode (where real water polygons are already enriched),
+the line-buffer fallback could still be added. This re-introduced synthetic
+width artifacts.
+
+### Solution Implemented
+
+**File:** `generator/engines/render_block.py`
+
+`waterway` buffering is now strict fallback logic:
+
+- if `OSM_LOCAL_EXACT_WATER` is enabled **and** polygonal water exists,
+  do **not** add buffered `waterway` geometry;
+- use buffered `waterway` only when polygonal water is missing.
+
+Implemented decision:
+
+```python
+exact_water_mode = os.getenv("OSM_LOCAL_EXACT_WATER", "").strip().lower() in {"1", "true", "yes", "on"}
+use_waterway_fallback = (not exact_water_mode) or len(water_p) == 0
+```
+
+This preserves full blue water coverage while avoiding over-inflated river shapes.
+
+### Reusable Rule (Use This Next Time)
+
+When debugging water geometry regressions:
+
+1. If exact polygonal water is present, treat line-based `waterway` buffers as
+    fallback only.
+2. Never merge constant-width river buffers onto already-correct polygonal water.
+3. Keep fallback enabled only for data-gaps (no polygon water available).
+
+### Quick Verification
+
+1. Render with local source + exact water enabled.
+2. Confirm river stays blue across full surface.
+3. Confirm riverbanks are not replaced by uniform-width, coarse polygons.
+
+---
+## Issue: Building Engine — Islands Missing, Water Not Uniform Near Coastlines (2026-08-07)
+
+### Problem Description
+
+When rendering Stockholm (or any coastal city near an OSM UTM zone boundary) with the **Building engine**, the following defects appeared:
+
+1. **Islands in water bodies were not rendered** — Skeppsholmen, Långholmen, Riddarholmen and others appeared as solid blue water instead of distinct land areas.
+2. **Large open water (fjords, straits) stayed beige** — the Saltsjön east of Gamla Stan had no blue fill despite being clearly open water.
+3. These issues did not affect the **Line engine**, which rendered Stockholm correctly.
+
+### Root Cause — Three Separate Bugs
+
+#### Bug 1: `_fill_polygon_holes` erased island holes
+
+The function used to fill small interior rings (data noise) was implemented as:
+
+```python
+def _fill_polygon_holes(geom):
+    if isinstance(geom, Polygon):
+        return Polygon(geom.exterior)   # strips ALL interior rings
+```
+
+In OSM, large water bodies (e.g. Riddarfjärden, Mälaren) encode islands as interior rings (holes) in the water polygon. Stripping all interiors made islands invisible — the water polygon became a solid fill that covered the island positions.
+
+**Fix:** Threshold-based hole filling — keep rings larger than 10,000 m² (real islands), discard only tiny rings (data artefacts):
+
+```python
+def _fill_polygon_holes(geom, min_hole_area_m2: float = 10_000):
+    if isinstance(geom, Polygon):
+        kept = [r for r in geom.interiors if Polygon(r).area >= min_hole_area_m2]
+        return Polygon(geom.exterior, kept)
+```
+
+#### Bug 2: Saltsjön / open-sea fjords missing from `water_raw`
+
+The `water_raw` OSM bundle uses `natural=water|bay|strait` and `water=*` tags. Many Stockholm fjords (Saltsjön, Lilla Värtan) are tagged as `natural=coastline` lines in OSM, not as closed water polygons, so they never appear in `water_raw`.
+
+The Building engine previously called `polygonize(coast_lines)` on the raw coastline geometry. This only produced polygons where coastline segments were already closed — generating 1 tiny polygon (60,000 m²) instead of the full fjord.
+
+**Fix:** Add the clip-rectangle boundary to the merge before `polygonize`, then use road-density filtering to distinguish sea from land (same technique as `render_line.py` vintage_atlas mode):
+
+```python
+merged = unary_union(list(coast_lines.geometry.values) + [clip_rect_local.boundary])
+water_polygons = [p for p in polygonize(merged) if not p.is_empty]
+
+for poly in water_polygons:
+    if poly.contains(center_in_ref):
+        continue   # centre point is on land, skip
+    density = road_length_inside / poly.area
+    if density < 1e-2:               # open water has no roads
+        sea_regions.append(poly)
+```
+
+#### Bug 3: UTM zone mismatch silently clipped all buildings to zero
+
+`ox.projection.project_gdf()` selects UTM zone independently per dataset based on centroid. At the 18 °E boundary between Zone 33 and Zone 34 (exactly where Stockholm sits), `edges_raw` was projected to EPSG:32634 (Zone 34) and `gdf_all_raw` (buildings) to EPSG:32633 (Zone 33). `gpd.clip()` found zero overlapping features — all buildings vanished silently.
+
+**Fix:** Project all layers to the same reference CRS derived from `edges_p`:
+
+```python
+ref_crs = edges_p.crs          # single authoritative zone
+gdf_all_p = gdf_all_raw.to_crs(ref_crs)   # not project_gdf()
+```
+
+#### Bug 4: Buildings/greens on islands erased by the water mask (2026-08-07 follow-up)
+
+After fixing Bug 2, the sea/fjord outline drew correctly and `islands_p` was overlaid on top with the background color — visually the island looked fine. But buildings and green areas **on the island itself** still failed to render, in styles where they had rendered fine before (e.g. Line engine, `urban_modern`, `midnight_ember`).
+
+**Root cause:** every land layer (`buildings_p`, `greens_p`, `parking_p`, `industrial_p`, etc.) is passed through `_mask_out_water(gdf, water_mask_geom)`, which calls `geom.difference(water_mask_geom)`. `water_mask_geom` includes `coast_union = unary_union(coast_water.geometry)` — the synthetic sea polygon from Bug 2's fix. That polygon is classified purely by **road density** (`density < 1e-2` ⇒ "sea"). A low-traffic island with only footpaths/pedestrian ways (e.g. a park island) can fall under the threshold and get folded entirely into the "sea" polygon as if it had no land at all. `islands_p` was only ever drawn as a *visual* patch on top (zorder), it was never subtracted from the actual mask geometry — so every building on that island was differenced away before it ever reached the plot call.
+
+**Fix:** explicitly punch the known OSM islands (`islands_raw`, i.e. `place=island|islet` / `natural=island`) out of `coast_water` as real holes, the same way `render_line.py` already does for `water_p`. This does not depend on road density and therefore also protects islands with sparse or no road network:
+
+```python
+if coast_water is not None and len(coast_water) > 0 and len(islands_p) > 0:
+    island_union = unary_union(islands_p.geometry)
+    coast_water["geometry"] = coast_water.geometry.apply(
+        lambda g: g.difference(island_union) if g is not None else g
+    )
+```
+
+Because `water_mask_geom` is derived from `coast_water` after this fix, every downstream `_mask_out_water(...)` call automatically stops erasing content on tagged islands — no per-layer changes needed.
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `generator/engines/render_building.py` | `_fill_polygon_holes` threshold; coastline sea polygon via `clip_rect.boundary`; islands punched out of `coast_water` as real holes; all `.to_crs(ref_crs)` projections |
+| `generator/core/render_dispatcher.py` | `EngineType.BLOCK` branch called `render_map_line` instead of `render_map_block` |
+
+### Reusable Rules
+
+- **Never strip all interior rings** from water polygons — each ring is a potential island.  
+- **Coastline polygonize without the clip boundary produces incomplete results** for any viewport that cuts through a coastline (i.e. coastal cities). Always merge `clip_rect_local.boundary` into the line set before `polygonize`.  
+- **Road density alone is not a reliable land/sea classifier.** Low-traffic islands (parks, pedestrian-only islets, military/historic islands) can score below the "sea" threshold. Any synthetic water polygon derived from heuristics (not from explicit OSM water tags) must have known islands (`islands_raw`) subtracted as real geometric holes — not just painted over visually — before it is used as a mask for other layers.  
+- **A visual overlay is not a mask fix.** Drawing `islands_p` on top with `zorder` makes an island *look* right while the underlying `water_mask_geom` can still erase buildings/greens on it via `_mask_out_water`. Always fix the geometry that masks are derived from, not just what gets painted last.  
+- **Road-density threshold ~0.01** reliably separates open sea from built-up islands.  
+- **UTM zone mismatch** is silent — `gpd.clip()` returns an empty GeoDataFrame rather than raising. Always force `to_crs(ref_crs)` when combining datasets from independent `project_gdf()` calls.
+
+### Verification
+
+1. Run `batch_render_manual.py` for a coastal city (Stockholm).
+2. Confirm open fjords (Saltsjön, Riddarfjärden, Mälaren) are rendered blue.
+3. Confirm Skeppsholmen, Långholmen, Riddarholmen appear as distinct land areas inside the water.
+4. Confirm buildings are present on the main islands (Stadsholmen / Gamla Stan).
+
+---
+
+## Issue: `OSM_SOURCE=local` Was Never Actually Read — All Data Still Came From Overpass (2026-08-07)
+
+### Problem Description
+
+`manual_render_common.py` sets `OSM_SOURCE=local` and `OSM_LOCAL_FILE=<path>` when a local `.osm` file is configured, and the CLI even prints `OSM src : local`. Despite this, styles that needed a brand-new cache variant (e.g. `vintage_atlas` — its layout margins produce a different `hw/hh` viewport than the other styles) failed with Overpass proxy errors:
+
+```
+[OSM] features_from_point:feature_tags failed via https://overpass-api.de/api: ...
+ProxyError: ('Unable to connect to proxy', OSError('Tunnel connection failed: 503 Service Unavailable'))
+```
+
+### Root Cause
+
+`generator/core/osm_bundle_cache.py` never read `OSM_SOURCE` / `OSM_LOCAL_FILE` at all. `_build_shared_osm_bundle()` unconditionally called `ox.graph_from_point(...)` and `ox.features_from_point(...)` (live Overpass queries) for every layer. The local `.osm` file was only ever used by `manual_render_common.py` to compute the **auto-fit center/extent** (via `_read_osm_bounds`) — the actual road/building/water geometry was always fetched live from Overpass, regardless of "local" mode. This worked as long as a cache pickle already existed for the exact viewport size, masking the bug — it only surfaced as a hard failure when a new viewport size needed a fresh fetch and Overpass/the proxy was unavailable.
+
+### Solution Implemented
+
+**File:** `generator/core/osm_bundle_cache.py`
+
+1. Added `_local_osm_file_path()` — returns the configured path when `OSM_SOURCE=local` and `OSM_LOCAL_FILE` point to an existing file, else `None`.
+2. Added `_fetch_features(tags, label, *, local_file, ...)` — calls `ox.features_from_xml(local_file, tags=tags)` when in local mode, otherwise falls back to the existing `_run_with_overpass_fallback(ox.features_from_point, ...)` path. Every feature layer (`gdf_all_raw`, `trees_raw`, `waterway_raw`, `railway_raw`, `paths_raw`, `water_raw`, `green_raw`, `coast_raw`, `islands_raw`) now goes through this single helper.
+3. Road graph: `ox.graph_from_xml(local_file, simplify=True)` replaces `ox.graph_from_point(...)` in local mode. `graph_from_xml` has no `custom_filter` argument, so edges are post-filtered by the same allowed `highway` set as `_ROAD_CUSTOM_FILTER` (`_highway_tag_matches`).
+4. Cache key now includes a `_local` suffix when local mode is active, so local-file and Overpass-derived bundles for the same coordinates never collide in `cache/`.
+5. Logs `[OSM] Local mode: reading <file> (no Overpass calls)` so it's obvious at runtime which path was taken.
+
+```python
+def _fetch_features(tags, query_label, *, local_file, center_lat, center_lon, dist_m):
+    if local_file is not None:
+        return ox.features_from_xml(local_file, tags=tags)
+    return _run_with_overpass_fallback(
+        lambda: ox.features_from_point((center_lat, center_lon), tags=tags, dist=dist_m),
+        query_label,
+    )
+```
+
+### Reusable Rules
+
+- **Setting an env var is not the same as reading it.** Grep the actual consumer (`os.getenv(...)`) before assuming a "local/offline mode" flag has any effect — it may only be read by an unrelated helper (here: auto-fit bounds calculation).
+- When adding a genuine local-file code path, mirror **every** query call site (graph + every feature tag set), not just one — partial coverage silently falls back to network calls for the rest.
+- `graph_from_xml`/`features_from_xml` skip the Overpass network entirely but also skip the `dist`/`custom_filter` server-side filtering — replicate any `custom_filter` as a client-side post-filter, and rely on downstream `clip_rect_local` clipping to bound the area.
+- Give local-mode and network-mode cache entries **different cache keys** — their feature sets can differ slightly (server-side filter vs whole-file parse), so they must never be reused interchangeably.
+
+### Verification
+
+1. Set `OSM_SOURCE=local` + `OSM_LOCAL_FILE=<path to .osm>` and delete any cache for a fresh viewport size (e.g. `vintage_atlas`).
+2. Run `batch_render_manual.py` (or call `render_style` directly) — confirm the log prints `[OSM] Local mode: reading <file> (no Overpass calls)` and no `ProxyError`/`overpass-api.de` lines appear.
+3. Confirm all styles complete with `OK`, even with no network/proxy access.
+
+---
 # �🚀 Roadmap
 
 ## 1. SVG / DXF Export

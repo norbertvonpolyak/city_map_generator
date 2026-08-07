@@ -168,7 +168,6 @@ def render_product(
         temp_output_dir = Path(temp_dir_raw)
 
         if style_def.engine == EngineType.BLOCK:
-
             map_result = render_map_block(
                 center_lat=center_lat,
                 center_lon=center_lon,
@@ -182,9 +181,7 @@ def render_product(
                 preview_mode=preview_mode,
                 filename_prefix=filename_prefix,
                 use_cache=use_cache,
-                output_png_path=output_png_path,
             )
-
         elif style_def.engine == EngineType.BUILDING:
 
             map_result = render_map_building(

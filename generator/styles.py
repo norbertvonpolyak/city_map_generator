@@ -38,6 +38,7 @@ class BuildingStyleConfig:
     green: str
     green_edge: str
     green_edge_width: float
+    construction: str
 
     water: str
     water_edge: str
@@ -66,6 +67,7 @@ class MaptoposterLineRenderConfig:
     road_widths: Dict[str, float]
     background_texture_path: str | None = None
     background_texture_opacity: float = 0.0
+    water_alpha: float = 0.78
 
 
 @dataclass(frozen=True)
@@ -201,6 +203,7 @@ STYLES = {
         green="#34513D",
         green_edge="#42584A",
         green_edge_width=0.06,
+        construction="#2F4A61",
 
         water="#081519",
         water_edge="#081519",
@@ -235,6 +238,7 @@ STYLES = {
         green="#B8C3B6",
         green_edge="#27442F",
         green_edge_width=0.06,
+        construction="#A5B79F",
 
         water="#9DB8B1",
         water_edge="#7F9A93",
@@ -269,6 +273,7 @@ STYLES = {
         green="#B8CFA5",
         green_edge="#6E7E60",
         green_edge_width=0.06,
+        construction="#C68968",
 
         water="#C4D9E3",
         water_edge="#607D8A",
@@ -303,6 +308,7 @@ STYLES = {
         green="#C8C8C8",
         green_edge="#8A8A8A",
         green_edge_width=0.06,
+        construction="#B0B0B0",
 
         water="#EFEFEF",
         water_edge="#A5A5A5",
@@ -337,6 +343,7 @@ STYLES = {
         green="#3d3657",
         green_edge="#3d3657",
         green_edge_width=0.06,
+        construction="#6F5E86",
 
         water="#1f1e3a",
         water_edge="#1f1e3a",
@@ -371,6 +378,7 @@ STYLES = {
         green="#8B9B82",
         green_edge="#56604E",
         green_edge_width=0.06,
+        construction="#C7AE8D",
 
         water="#D9E5EB",
         water_edge="#7A8D97",
@@ -405,6 +413,7 @@ STYLES = {
         green="#8A815B",
         green_edge="#4C4730",
         green_edge_width=0.06,
+        construction="#8B7442",
 
         water="#4E5C6A",
         water_edge="#8896A3",
@@ -425,42 +434,6 @@ STYLES = {
     # -------------------------------------------------------------------------
     # LINE ENGINE
     # -------------------------------------------------------------------------
-
-    "mp_noir_gold": MaptoposterLineStyleConfig(
-        render=MaptoposterLineRenderConfig(
-            background="#000000",
-            text="#FFFFFF",
-            water="#5C5C5C",
-            parks="#272727",
-            road_colors={
-                "motorway": "#BB9F02",      # bright gold
-                "trunk": "#BB9F02",         # gold, slightly darker
-                "primary": "#DD9F01",       # gold, darker
-                "secondary": "#E6B800",     # darker gold
-                "tertiary": "#9C9C7E",      # even darker gold
-                "residential": "#817F78",   # dark gold
-                "default": "#999B8F",       # very dark gold/bronze
-            },
-            road_widths={
-                "motorway": 5.2,
-                "trunk": 4.0,
-                "primary": 4.0,
-                "secondary": 3.7,
-                "tertiary": 3.15,
-                "residential": 1.5,
-                "default": 1.2,
-            },
-        ),
-        layout=MaptoposterLineLayoutConfig(
-            uniform_margins=True,
-            passepartout_color="#101010",
-            bottom_fade_color="#000000",
-            title_color="#FFD700",         # gold text
-            subtitle_color="#FFD700",      # gold subtitle
-            coordinates_color="#FFD700",   # gold coordinates
-            custom_text_color="#FFD700",   # gold custom text
-        ),
-    ),
 
     "vintage_atlas": MaptoposterLineStyleConfig(
         render=MaptoposterLineRenderConfig(
@@ -491,6 +464,7 @@ STYLES = {
             },
             background_texture_path="assets/textures/mp_black_white_paper.jpg",
             background_texture_opacity=0.6,
+            water_alpha=0.30,
         ),
         layout=MaptoposterLineLayoutConfig(
             uniform_margins=True,

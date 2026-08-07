@@ -13,6 +13,7 @@ renders/
 *.pdf
 *.png
 !Logo/dotty_map_logo.png
+input/osm/
 
 
 # OS

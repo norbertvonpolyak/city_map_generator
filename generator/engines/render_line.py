@@ -12,11 +12,13 @@ import geopandas as gpd
 import matplotlib.pyplot as plt
 import numpy as np
 import osmnx as ox
+import pandas as pd
 import random
 from matplotlib import colors as mcolors
 from PIL import Image
 
 from shapely.geometry import Point, box
+from shapely.ops import polygonize, unary_union
 
 from generator.specs import ProductSpec
 from generator.styles import get_style_config, MaptoposterLineStyleConfig, BlockStyleConfig
@@ -143,6 +145,102 @@ def _prepare_polygon_layer(raw_layer: gpd.GeoDataFrame | None, target_crs, clip_
     return gpd.clip(layer_p, gpd.GeoSeries([clip_rect], crs=target_crs))
 
 
+def _prepare_line_layer(raw_layer: gpd.GeoDataFrame | None, target_crs, clip_rect) -> gpd.GeoDataFrame:
+    if raw_layer is None or len(raw_layer) == 0:
+        return gpd.GeoDataFrame(geometry=[], crs=target_crs)
+
+    layer = raw_layer[(~raw_layer.geometry.isna()) & (~raw_layer.geometry.is_empty)]
+    if len(layer) == 0:
+        return gpd.GeoDataFrame(geometry=[], crs=target_crs)
+
+    layer_p = layer.to_crs(target_crs)
+    layer_p = layer_p[layer_p.geom_type.isin(["LineString", "MultiLineString"])]
+    if len(layer_p) == 0:
+        return gpd.GeoDataFrame(geometry=[], crs=target_crs)
+
+    return gpd.clip(layer_p, gpd.GeoSeries([clip_rect], crs=target_crs))
+
+
+def _exclude_boundary_features(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    if len(gdf) == 0 or "boundary" not in gdf.columns:
+        return gdf
+    boundary = gdf["boundary"].fillna("").astype(str).str.strip().str.lower()
+    return gdf[boundary.eq("")]
+
+
+def _filter_man_made(gdf: gpd.GeoDataFrame | None, values: set[str]) -> gpd.GeoDataFrame:
+    if gdf is None or len(gdf) == 0 or "man_made" not in gdf.columns:
+        return gpd.GeoDataFrame(geometry=[], crs=getattr(gdf, "crs", None))
+    man_made = gdf["man_made"].fillna("").astype(str).str.lower()
+    return gdf[man_made.isin(values)].copy()
+
+
+def _tag_value_matches(value, allowed: set[str]) -> bool:
+    if isinstance(value, (list, tuple, set)):
+        values = value
+    else:
+        values = [value]
+    normalized = {
+        str(item).strip().lower()
+        for item in values
+        if item is not None and str(item).strip()
+    }
+    return any(item in normalized for item in allowed)
+
+
+def _mask_linework_from_polygon(gdf: gpd.GeoDataFrame, mask_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    if len(gdf) == 0 or len(mask_gdf) == 0:
+        return gdf
+
+    mask_geom = mask_gdf.union_all()
+    if mask_geom is None or mask_geom.is_empty:
+        return gdf
+
+    clipped = gdf.copy()
+    clipped["geometry"] = clipped.geometry.apply(lambda geom: geom.difference(mask_geom))
+    return clipped[(~clipped.geometry.isna()) & (~clipped.geometry.is_empty)]
+
+
+def _marine_reserve_mask(gdf: gpd.GeoDataFrame) -> np.ndarray:
+    if len(gdf) == 0:
+        return np.zeros(0, dtype=bool)
+
+    def _txt(col: str):
+        if col in gdf.columns:
+            return gdf[col].fillna("").astype(str).str.lower()
+        return pd.Series([""] * len(gdf), index=gdf.index, dtype="object")
+
+    marine = _txt("marine")
+    boundary = _txt("boundary")
+    protection_title = _txt("protection_title")
+    designation = _txt("designation")
+    name = _txt("name")
+    leisure = _txt("leisure")
+    natural = _txt("natural")
+
+    marine_flag = (
+        marine.str.contains(r"^yes$|^true$|^1$", regex=True)
+        if hasattr(marine, "str") else np.zeros(len(gdf), dtype=bool)
+    )
+    protected_boundary = (
+        boundary.str.contains("protected_area", regex=False)
+        if hasattr(boundary, "str") else np.zeros(len(gdf), dtype=bool)
+    )
+    marine_keywords = (
+        name.str.contains("marine|mcz|conservation zone", regex=True)
+        | designation.str.contains("marine|mcz|conservation zone", regex=True)
+        | protection_title.str.contains("marine|mcz|conservation zone", regex=True)
+        if hasattr(name, "str") else np.zeros(len(gdf), dtype=bool)
+    )
+    marine_nature = (
+        leisure.str.contains("nature_reserve", regex=False)
+        & natural.str.contains("water|bay|strait", regex=True)
+        if hasattr(leisure, "str") and hasattr(natural, "str") else np.zeros(len(gdf), dtype=bool)
+    )
+
+    return (marine_flag & protected_boundary) | marine_keywords | marine_nature
+
+
 def _is_bridge_value(v) -> bool:
     if isinstance(v, (list, tuple, set)):
         return any(_is_bridge_value(item) for item in v)
@@ -262,14 +360,142 @@ def render_map_line(
     def _build_geometry():
         edges = shared_bundle["edges_raw"]
         edges_p = ox.projection.project_gdf(edges)
-        edges_p = gpd.clip(edges_p, gpd.GeoSeries([clip_rect], crs=edges_p.crs))
+        # Recompute clip_rect in edges_p CRS to ensure consistency at zone boundaries.
+        center_in_ref = gpd.GeoDataFrame(
+            geometry=[Point(center_lon, center_lat)],
+            crs="EPSG:4326"
+        ).to_crs(edges_p.crs).geometry.iloc[0]
+        clip_rect_local = box(
+            center_in_ref.x - half_width_m,
+            center_in_ref.y - half_height_m,
+            center_in_ref.x + half_width_m,
+            center_in_ref.y + half_height_m
+        )
+        edges_p = gpd.clip(edges_p, gpd.GeoSeries([clip_rect_local], crs=edges_p.crs))
         edges_p = edges_p[~edges_p.is_empty]
 
         water_raw = shared_bundle["water_raw"]
         green_raw = shared_bundle["green_raw"]
+        gdf_all_raw = shared_bundle.get("gdf_all_raw")
+        railway_raw = shared_bundle.get("railway_raw")
+        paths_raw = shared_bundle.get("paths_raw")
+        coast_raw = shared_bundle.get("coast_raw")
+        islands_raw = shared_bundle.get("islands_raw")
 
-        water_p = _prepare_polygon_layer(water_raw, edges_p.crs, clip_rect)
-        green_p = _prepare_polygon_layer(green_raw, edges_p.crs, clip_rect)
+        water_p = _prepare_polygon_layer(water_raw, edges_p.crs, clip_rect_local)
+        green_p = _prepare_polygon_layer(green_raw, edges_p.crs, clip_rect_local)
+        railway_p = _prepare_line_layer(railway_raw, edges_p.crs, clip_rect_local)
+        paths_p = _prepare_line_layer(paths_raw, edges_p.crs, clip_rect_local)
+        coast_p = _prepare_line_layer(coast_raw, edges_p.crs, clip_rect_local)
+
+        beach_p = gpd.GeoDataFrame(geometry=[], crs=edges_p.crs)
+        sports_p = gpd.GeoDataFrame(geometry=[], crs=edges_p.crs)
+        construction_p = gpd.GeoDataFrame(geometry=[], crs=edges_p.crs)
+        industrial_p = gpd.GeoDataFrame(geometry=[], crs=edges_p.crs)
+        port_polys_p = gpd.GeoDataFrame(geometry=[], crs=edges_p.crs)
+        port_lines_p = gpd.GeoDataFrame(geometry=[], crs=edges_p.crs)
+
+        if gdf_all_raw is not None and len(gdf_all_raw) > 0:
+            gdf_all = gdf_all_raw[(~gdf_all_raw.geometry.isna()) & (~gdf_all_raw.geometry.is_empty)]
+            if len(gdf_all) > 0:
+                gdf_all_p = gdf_all.to_crs(edges_p.crs)
+                gdf_all_p = gpd.clip(gdf_all_p, gpd.GeoSeries([clip_rect], crs=edges_p.crs))
+                gdf_all_p = gdf_all_p[gdf_all_p.geom_type.isin(["Polygon", "MultiPolygon"])]
+
+                if "natural" in gdf_all_p.columns:
+                    natural = gdf_all_p["natural"].fillna("").astype(str).str.lower()
+                    beach_p = gdf_all_p[natural.isin(["beach", "sand"])]
+                    beach_p = _exclude_boundary_features(beach_p)
+
+                if "leisure" in gdf_all_p.columns:
+                    leisure = gdf_all_p["leisure"].fillna("").astype(str).str.lower()
+                    sports_p = gdf_all_p[leisure.isin(["pitch", "sports_centre", "stadium"])]
+                    sports_p = _exclude_boundary_features(sports_p)
+
+                if "landuse" in gdf_all_p.columns:
+                    landuse = gdf_all_p["landuse"]
+                    if palette_name == "vintage_atlas":
+                        allowed_landuse = {"industrial", "commercial", "retail", "port", "dock"}
+                        industrial_mask = landuse.apply(lambda value: _tag_value_matches(value, allowed_landuse))
+                        construction_mask = landuse.apply(lambda value: _tag_value_matches(value, {"construction", "brownfield"}))
+                    else:
+                        industrial_mask = landuse.fillna("").astype(str).str.lower().isin(["industrial", "commercial", "retail", "port", "dock"])
+                        construction_mask = landuse.fillna("").astype(str).str.lower().isin(["construction", "brownfield"])
+                    industrial_p = gdf_all_p[industrial_mask]
+                    industrial_p = _exclude_boundary_features(industrial_p)
+                    construction_p = gdf_all_p[construction_mask]
+                    construction_p = _exclude_boundary_features(construction_p)
+
+                if "man_made" in gdf_all_p.columns:
+                    man_made = gdf_all_p["man_made"]
+                    if palette_name == "vintage_atlas":
+                        allowed_man_made = {"pier", "quay", "breakwater", "jetty", "groyne"}
+                        port_mask = man_made.apply(lambda value: _tag_value_matches(value, allowed_man_made))
+                    else:
+                        port_mask = man_made.fillna("").astype(str).str.lower().isin(["pier", "quay", "breakwater", "jetty", "groyne"])
+                    port_raw = gdf_all_p[port_mask]
+                    port_raw = _exclude_boundary_features(port_raw)
+                    port_polys_p = _prepare_polygon_layer(port_raw, edges_p.crs, clip_rect_local)
+                    port_lines_p = _prepare_line_layer(port_raw, edges_p.crs, clip_rect_local)
+
+        if palette_name == "vintage_atlas" and coast_raw is not None and len(coast_raw) > 0:
+            coast = coast_raw[(~coast_raw.geometry.isna()) & (~coast_raw.geometry.is_empty)]
+            if len(coast) > 0:
+                coast_p_all = coast.to_crs(edges_p.crs)
+                coast_lines = coast_p_all[coast_p_all.geom_type.isin(["LineString", "MultiLineString"])]
+                if len(coast_lines) > 0:
+                    merged = unary_union(list(coast_lines.geometry.values) + [clip_rect.boundary])
+                    polys = [p for p in polygonize(merged) if (not p.is_empty) and p.area > 0]
+                    if polys:
+                        roads_union = unary_union(list(edges_p.geometry.values)) if len(edges_p) > 0 else None
+                        sea_regions = []
+
+                        for poly in polys:
+                            if poly.contains(center_p):
+                                continue
+
+                            density = 0.0
+                            if roads_union is not None and poly.area > 0:
+                                road_inside = poly.intersection(roads_union)
+                                if not road_inside.is_empty:
+                                    density = road_inside.length / poly.area
+
+                            sea_threshold = 1e-2 if palette_name != "vintage_atlas" else 2e-2
+                            if density < sea_threshold:
+                                sea_regions.append(poly)
+
+                        if sea_regions:
+                            sea_poly = unary_union(sea_regions)
+                            if not sea_poly.is_empty:
+                                sea_p = gpd.GeoDataFrame(geometry=[sea_poly], crs=edges_p.crs)
+                                if len(water_p) > 0:
+                                    water_p = gpd.GeoDataFrame(
+                                        geometry=list(water_p.geometry) + list(sea_p.geometry),
+                                        crs=edges_p.crs,
+                                    )
+                                else:
+                                    water_p = sea_p
+
+        if islands_raw is not None and len(islands_raw) > 0 and len(water_p) > 0:
+            islands = islands_raw[(~islands_raw.geometry.isna()) & (~islands_raw.geometry.is_empty)]
+            if len(islands) > 0:
+                islands_p = islands.to_crs(edges_p.crs)
+                islands_p = islands_p[islands_p.geom_type.isin(["Polygon", "MultiPolygon"])]
+                if len(islands_p) > 0:
+                    islands_p = gpd.clip(islands_p, gpd.GeoSeries([clip_rect], crs=edges_p.crs))
+                if len(islands_p) > 0:
+                    island_union = unary_union(islands_p.geometry)
+                    water_p = water_p.copy()
+                    water_p["geometry"] = water_p.geometry.apply(lambda geom: geom.difference(island_union))
+                    water_p = water_p[(~water_p.geometry.isna()) & (~water_p.geometry.is_empty)]
+                    water_p = water_p[water_p.geom_type.isin(["Polygon", "MultiPolygon"])]
+
+        if len(green_p) > 0:
+            green_p = green_p[~_marine_reserve_mask(green_p)]
+            green_p = _exclude_boundary_features(green_p)
+
+        if len(beach_p) > 0:
+            paths_p = _mask_linework_from_polygon(paths_p, beach_p)
 
         if "highway" in edges_p.columns:
             edges_p = edges_p.copy()
@@ -279,6 +505,15 @@ def render_map_line(
             "edges_p": edges_p,
             "water_p": water_p,
             "green_p": green_p,
+            "beach_p": beach_p,
+            "sports_p": sports_p,
+            "construction_p": construction_p,
+            "industrial_p": industrial_p,
+            "port_polys_p": port_polys_p,
+            "port_lines_p": port_lines_p,
+            "railway_p": railway_p,
+            "paths_p": paths_p,
+            "coast_p": coast_p,
         }
 
     shared_bundle = load_or_build_shared_osm_bundle(
@@ -288,6 +523,7 @@ def render_map_line(
         half_width_m=half_width_m,
         half_height_m=half_height_m,
         use_cache=use_cache,
+        include_building_features=True,
     )
 
     geometry_data = _build_geometry()
@@ -295,6 +531,15 @@ def render_map_line(
     edges_p = geometry_data["edges_p"]
     water_p = geometry_data["water_p"]
     green_p = geometry_data["green_p"]
+    beach_p = geometry_data["beach_p"]
+    sports_p = geometry_data["sports_p"]
+    construction_p = geometry_data["construction_p"]
+    industrial_p = geometry_data["industrial_p"]
+    port_polys_p = geometry_data["port_polys_p"]
+    port_lines_p = geometry_data["port_lines_p"]
+    railway_p = geometry_data["railway_p"]
+    paths_p = geometry_data["paths_p"]
+    coast_p = geometry_data["coast_p"]
 
     # -----------------------------------------------------------------------
     # PLOT
@@ -360,7 +605,7 @@ def render_map_line(
             color=render_cfg.water,
             edgecolor=water_edge,
             linewidth=0.35,
-            alpha=0.78,
+            alpha=render_cfg.water_alpha,
             antialiased=True,
             zorder=1,
         )
@@ -373,6 +618,80 @@ def render_map_line(
             alpha=0.48,
             antialiased=True,
             zorder=2,
+        )
+
+    if len(beach_p) > 0:
+        beach_color = _blend_towards(render_cfg.water, "#E9DCC5", 0.62)
+        beach_edge = _blend_towards(beach_color, "#6B6255", 0.30)
+        beach_p.plot(
+            ax=ax,
+            color=beach_color,
+            edgecolor=beach_edge,
+            linewidth=0.25,
+            alpha=0.65,
+            antialiased=True,
+            zorder=2.2,
+        )
+
+    if len(construction_p) > 0:
+        construction_color = "#D8C7AE" if palette_name == "vintage_atlas" else _blend_towards(render_cfg.parks, "#D0B98F", 0.50)
+        construction_edge = _blend_towards(construction_color, "#7C6950", 0.36)
+        construction_p.plot(
+            ax=ax,
+            color=construction_color,
+            edgecolor=construction_edge,
+            linewidth=0.26,
+            alpha=0.70,
+            antialiased=True,
+            zorder=2.4,
+        )
+
+    if len(industrial_p) > 0:
+        industrial_color = "#CFC5B4" if palette_name == "vintage_atlas" else _blend_towards(render_cfg.parks, "#B7ADA0", 0.62)
+        industrial_edge = _blend_towards(industrial_color, "#7A6F62", 0.34)
+        industrial_p.plot(
+            ax=ax,
+            color=industrial_color,
+            edgecolor=industrial_edge,
+            linewidth=0.28,
+            alpha=0.68,
+            antialiased=True,
+            zorder=2.45,
+        )
+
+    if len(port_polys_p) > 0:
+        port_poly_color = "#BEB4A5" if palette_name == "vintage_atlas" else _blend_towards(render_cfg.water, "#2F2F2F", 0.50)
+        port_polys_p.plot(
+            ax=ax,
+            color=port_poly_color,
+            edgecolor="none",
+            alpha=0.88,
+            antialiased=True,
+            zorder=2.55,
+        )
+
+    if len(port_lines_p) > 0:
+        port_line_color = "#4A4339" if palette_name == "vintage_atlas" else _blend_towards(render_cfg.water, "#1A1A1A", 0.50)
+        port_lines_p.plot(
+            ax=ax,
+            color=port_line_color,
+            linewidth=max(effective_road_widths.get("default", 0.5) * 0.95, 0.55),
+            alpha=0.90,
+            capstyle="round",
+            joinstyle="round",
+            antialiased=True,
+            zorder=2.65,
+        )
+
+    if len(coast_p) > 0:
+        coast_color = _blend_towards(render_cfg.water, "#303030", 0.32)
+        coast_p.plot(
+            ax=ax,
+            color=coast_color,
+            linewidth=0.55,
+            alpha=0.82,
+            antialiased=True,
+            zorder=4,
         )
 
     edges_p = edges_p.copy()
@@ -428,6 +747,33 @@ def render_map_line(
                 snap=False,
                 zorder=30 + draw_index,
             )
+
+    # Extra requested line layers
+    if len(paths_p) > 0:
+        path_color = _blend_towards(render_cfg.road_colors.get("residential", render_cfg.road_colors.get("default", "#666666")), "#888888", 0.10)
+        paths_p.plot(
+            ax=ax,
+            color=path_color,
+            linewidth=max(effective_road_widths.get("default", 0.5) * 0.70, 0.32),
+            alpha=0.80,
+            capstyle="round",
+            joinstyle="round",
+            antialiased=True,
+            zorder=18,
+        )
+
+    if len(railway_p) > 0:
+        rail_color = _blend_towards(render_cfg.road_colors.get("default", "#555555"), "#1F1F1F", 0.22)
+        railway_p.plot(
+            ax=ax,
+            color=rail_color,
+            linewidth=max(effective_road_widths.get("residential", 0.8) * 0.85, 0.45),
+            alpha=0.86,
+            capstyle="round",
+            joinstyle="round",
+            antialiased=True,
+            zorder=19,
+        )
 
     ax.set_xlim(minx, maxx)
     ax.set_ylim(miny, maxy)

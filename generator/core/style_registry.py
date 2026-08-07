@@ -74,10 +74,6 @@ STYLE_REGISTRY = {
     # LINE ENGINE STYLES
     # ---------------------------------------------------------
 
-    "mp_noir_gold": StyleDefinition(
-        engine=EngineType.LINE,
-    ),
-
     "vintage_atlas": StyleDefinition(
         engine=EngineType.LINE,
     ),

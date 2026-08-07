@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import math
+import os
+import time
+from itertools import count
+from pathlib import Path
 
 import geopandas as gpd
 import osmnx as ox
@@ -16,7 +20,101 @@ _ROAD_CUSTOM_FILTER = (
     'pedestrian|footway|path|steps"]'
 )
 
-ox.settings.requests_timeout = 300
+# Mirrors _ROAD_CUSTOM_FILTER for post-filtering edges from graph_from_xml,
+# which has no custom_filter argument (unlike graph_from_point).
+_ALLOWED_ROAD_HIGHWAYS = {
+    "motorway", "motorway_link", "trunk", "trunk_link", "primary", "primary_link",
+    "secondary", "secondary_link", "tertiary", "tertiary_link", "residential",
+    "unclassified", "living_street", "service", "pedestrian", "footway", "path", "steps",
+}
+
+# Default Overpass endpoints used for round-robin rotation.
+OVERPASS_URLS = [
+    "https://overpass-api.de/api",
+]
+
+_ENDPOINT_ROTATION_COUNTER = count()
+
+
+def _highway_tag_matches(value, allowed: set[str] = _ALLOWED_ROAD_HIGHWAYS) -> bool:
+    values = value if isinstance(value, (list, tuple, set)) else [value]
+    normalized = {str(v).strip().lower() for v in values if v is not None and str(v).strip()}
+    return any(v in normalized for v in allowed)
+
+
+def _local_osm_file_path() -> "Path | None":
+    """Return the local OSM XML path when local mode is active, else None.
+
+    Local mode is enabled via OSM_SOURCE=local + OSM_LOCAL_FILE=<path>. When
+    active, no Overpass network calls are made — all data is read from disk.
+    """
+    if os.getenv("OSM_SOURCE", "").strip().lower() != "local":
+        return None
+    local_file = os.getenv("OSM_LOCAL_FILE", "").strip()
+    if not local_file:
+        return None
+    path = Path(local_file)
+    if not path.is_file():
+        raise FileNotFoundError(f"OSM_LOCAL_FILE not found: {path}")
+    return path
+
+
+def _fetch_features(
+    tags: dict,
+    query_label: str,
+    *,
+    local_file: "Path | None",
+    center_lat: float,
+    center_lon: float,
+    dist_m: int,
+):
+    """Fetch OSM features either from a local XML file or via Overpass."""
+    if local_file is not None:
+        return ox.features_from_xml(local_file, tags=tags)
+    return _run_with_overpass_fallback(
+        lambda: ox.features_from_point((center_lat, center_lon), tags=tags, dist=dist_m),
+        query_label,
+    )
+
+
+def _get_overpass_endpoints() -> list[str]:
+    endpoints_env = os.getenv("OSM_OVERPASS_ENDPOINTS", "").strip()
+    if endpoints_env:
+        return [e.strip() for e in endpoints_env.split(",") if e.strip()]
+    return OVERPASS_URLS
+
+
+def _rotated_endpoints(endpoints: list[str]) -> list[str]:
+    if not endpoints:
+        return []
+    start_idx = next(_ENDPOINT_ROTATION_COUNTER) % len(endpoints)
+    return endpoints[start_idx:] + endpoints[:start_idx]
+
+
+def _run_with_overpass_fallback(query_func, query_label: str):
+    endpoints = _rotated_endpoints(_get_overpass_endpoints())
+    if not endpoints:
+        raise RuntimeError("No Overpass endpoints configured. Set OSM_OVERPASS_ENDPOINTS or OVERPASS_URLS.")
+
+    original_overpass_url = ox.settings.overpass_url
+    last_error = None
+
+    for endpoint in endpoints:
+        try:
+            ox.settings.overpass_url = endpoint
+            result = query_func()
+            ox.settings.overpass_url = original_overpass_url
+            return result
+        except Exception as error:
+            last_error = error
+            print(f"[OSM] {query_label} failed via {endpoint}: {error}")
+            time.sleep(0.8)
+            continue
+
+    ox.settings.overpass_url = original_overpass_url
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError(f"[OSM] {query_label} failed without a captured exception")
 
 
 def _build_shared_osm_bundle(
@@ -29,14 +127,23 @@ def _build_shared_osm_bundle(
 ) -> dict[str, object]:
     dist_m = int(math.ceil(math.sqrt(half_width_m**2 + half_height_m**2))) + 300
 
-    graph = ox.graph_from_point(
-        (center_lat, center_lon),
-        dist=dist_m,
-        custom_filter=_ROAD_CUSTOM_FILTER,
-        simplify=True,
-    )
+    local_file = _local_osm_file_path()
+    if local_file is not None:
+        print(f"[OSM] Local mode: reading {local_file.name} (no Overpass calls)")
+        graph = ox.graph_from_xml(local_file, simplify=True)
+    else:
+        graph = ox.graph_from_point(
+            (center_lat, center_lon),
+            dist=dist_m,
+            custom_filter=_ROAD_CUSTOM_FILTER,
+            simplify=True,
+        )
 
     edges_raw = ox.graph_to_gdfs(graph, nodes=False, edges=True)
+
+    if local_file is not None and "highway" in edges_raw.columns:
+        # graph_from_xml has no custom_filter; replicate _ROAD_CUSTOM_FILTER here.
+        edges_raw = edges_raw[edges_raw["highway"].apply(_highway_tag_matches)]
 
     # Building engine-specific features (only if needed)
     if not include_building_features:
@@ -55,17 +162,28 @@ def _build_shared_osm_bundle(
                 "meadow",
                 "recreation_ground",
                 "village_green",
+                "construction",
+                "brownfield",
                 "basin",
                 "reservoir",
                 "industrial",
                 "commercial",
                 "retail",
+                "port",
+                "dock",
                 "education",
                 "allotments",
                 "garden",
                 "cemetery",
                 "farmland",
                 "orchard",
+            ],
+            "man_made": [
+                "pier",
+                "quay",
+                "breakwater",
+                "jetty",
+                "groyne",
             ],
             "leisure": [
                 "park",
@@ -95,83 +213,86 @@ def _build_shared_osm_bundle(
                 "coastline",
                 "island",
             ],
+            "sport": ["golf"],
             "water": True,
             "waterway": True,
             "railway": True,
             "amenity": ["parking", "grave_yard", "school", "college", "university"],
             "place": ["square", "island", "islet"],
             "highway": ["pedestrian", "footway", "path", "track", "steps"],
+            "tourism": ["hotel", "motel", "resort", "hostel", "guest_house"],
+            "aeroway": ["aerodrome", "apron", "terminal", "helipad", "runway", "taxiway"],
         }
 
-        gdf_all_raw = ox.features_from_point(
-            (center_lat, center_lon),
-            tags=feature_tags,
-            dist=dist_m,
+        gdf_all_raw = _fetch_features(
+            feature_tags,
+            "features_from_point:feature_tags",
+            local_file=local_file, center_lat=center_lat, center_lon=center_lon, dist_m=dist_m,
         )
 
-        trees_raw = ox.features_from_point(
-            (center_lat, center_lon),
-            tags={"natural": "tree"},
-            dist=dist_m,
+        trees_raw = _fetch_features(
+            {"natural": "tree"},
+            "features_from_point:trees",
+            local_file=local_file, center_lat=center_lat, center_lon=center_lon, dist_m=dist_m,
         )
 
-        waterway_raw = ox.features_from_point(
-            (center_lat, center_lon),
-            tags={"waterway": True},
-            dist=dist_m,
+        waterway_raw = _fetch_features(
+            {"waterway": True},
+            "features_from_point:waterway",
+            local_file=local_file, center_lat=center_lat, center_lon=center_lon, dist_m=dist_m,
         )
 
-        railway_raw = ox.features_from_point(
-            (center_lat, center_lon),
-            tags={"railway": True},
-            dist=dist_m,
+        railway_raw = _fetch_features(
+            {"railway": True},
+            "features_from_point:railway",
+            local_file=local_file, center_lat=center_lat, center_lon=center_lon, dist_m=dist_m,
         )
 
-        paths_raw = ox.features_from_point(
-            (center_lat, center_lon),
-            tags={"highway": ["footway", "path", "track", "steps"]},
-            dist=dist_m,
+        paths_raw = _fetch_features(
+            {"highway": ["footway", "path", "track", "steps"]},
+            "features_from_point:paths",
+            local_file=local_file, center_lat=center_lat, center_lon=center_lon, dist_m=dist_m,
         )
 
-    water_raw = ox.features_from_point(
-        (center_lat, center_lon),
-        tags={
+    water_raw = _fetch_features(
+        {
             "natural": ["water", "bay", "strait"],
             "water": True,
             "waterway": ["riverbank", "canal"],
             "landuse": ["basin", "reservoir"],
         },
-        dist=dist_m,
+        "features_from_point:water",
+        local_file=local_file, center_lat=center_lat, center_lon=center_lon, dist_m=dist_m,
     )
 
-    green_raw = ox.features_from_point(
-        (center_lat, center_lon),
-        tags={
+    green_raw = _fetch_features(
+        {
             "leisure": ["park", "garden", "nature_reserve", "recreation_ground", "village_green"],
             "landuse": ["forest", "grass", "meadow", "recreation_ground", "village_green"],
             "natural": ["wood", "grassland", "scrub", "heath"],
         },
-        dist=dist_m,
+        "features_from_point:green",
+        local_file=local_file, center_lat=center_lat, center_lon=center_lon, dist_m=dist_m,
     )
 
     try:
-        coast_raw = ox.features_from_point(
-            (center_lat, center_lon),
-            tags={"natural": "coastline"},
-            dist=dist_m,
+        coast_raw = _fetch_features(
+            {"natural": "coastline"},
+            "features_from_point:coast",
+            local_file=local_file, center_lat=center_lat, center_lon=center_lon, dist_m=dist_m,
         )
     except InsufficientResponseError:
         print("[OSM] Nincs tengerpart ezen a területen – coast_raw kihagyva.")
         coast_raw = None
 
     try:
-        islands_raw = ox.features_from_point(
-            (center_lat, center_lon),
-            tags={
+        islands_raw = _fetch_features(
+            {
                 "place": ["island", "islet"],
                 "natural": "island",
             },
-            dist=dist_m,
+            "features_from_point:islands",
+            local_file=local_file, center_lat=center_lat, center_lon=center_lon, dist_m=dist_m,
         )
     except InsufficientResponseError:
         print("[OSM] Nincsenek szigetek ezen a területen – islands_raw kihagyva.")
@@ -244,7 +365,9 @@ def load_or_build_shared_osm_bundle(
     include_building_features: bool = False,
 ) -> dict[str, object]:
     bld_suffix = "_bld" if include_building_features else ""
-    cache_variant = f"bundle_v1_hw{int(round(half_width_m))}_hh{int(round(half_height_m))}{bld_suffix}"
+    # Local-file and Overpass data can differ; keep their caches separate.
+    local_suffix = "_local" if _local_osm_file_path() is not None else ""
+    cache_variant = f"bundle_v2_hw{int(round(half_width_m))}_hh{int(round(half_height_m))}{bld_suffix}{local_suffix}"
 
     if not use_cache:
         return _build_shared_osm_bundle(

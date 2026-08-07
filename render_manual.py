@@ -25,206 +25,102 @@ ELÉRHETŐ MÉRETEK (cm):
 from __future__ import annotations
 
 # =============================================================================
-#  PARAMÉTEREK – IDE ÍRD ÁT!
+#  PARAMETEREK - IDE IRD AT
 # =============================================================================
 
-CITY_NAME   = "BOURNEMOUTH"          # Cím a poszteren (és a fájlnévben)
-LAT         = 50.7195      # Szélességi fok
-LON         = -1.8794            # Hosszúsági fok
-EXTENT_M    = 5000                # Fél-extent méterben (pl. 2000 = ~4 km átmérő)
-SIZE_KEY    = "50x70"             # Plakátméret kulcs (cm)
-STYLE       = "urban_modern"    # Stílus neve (lásd fent)
-SUBTITLE    = None                # None → automatikus koordináta felirat
-OUTPUT_DIR_BASE = "output"        # Kimeneti mappa (a project gyökéréhez képest)
-USE_CACHE   = True               # OSM gyorsítótár használata
-
-""" CITY_NAME   = "STOCKHOLM"          # Cím a poszteren (és a fájlnévben)
-LAT         = 59.3290      # Szélességi fok
-LON         = 18.0652            # Hosszúsági fok
-EXTENT_M    = 5000                # Fél-extent méterben (pl. 2000 = ~4 km átmérő)
-SIZE_KEY    = "50x70"             # Plakátméret kulcs (cm)
-STYLE       = "midnight_blue"    # Stílus neve (lásd fent)
-SUBTITLE    = None                # None → automatikus koordináta felirat
-OUTPUT_DIR_BASE = "output"        # Kimeneti mappa (a project gyökéréhez képest)
-USE_CACHE   = True               # OSM gyorsítótár használata """
-
-
-""" CITY_NAME   = "HELSINKI"          # Cím a poszteren (és a fájlnévben)
-LAT         = 60.1710      # Szélességi fok
-LON         = 24.9375            # Hosszúsági fok
-EXTENT_M    = 5000                # Fél-extent méterben (pl. 2000 = ~4 km átmérő)
-SIZE_KEY    = "50x70"             # Plakátméret kulcs (cm)
-STYLE       = "vintage_atlas"    # Stílus neve (lásd fent)
-SUBTITLE    = None                # None → automatikus koordináta felirat
-OUTPUT_DIR_BASE = "output"        # Kimeneti mappa (a project gyökéréhez képest)
-USE_CACHE   = True               # OSM gyorsítótár használata """
-
-
-# =============================================================================
-# (Alatta nem kell módosítani, hacsak nem tudod, mit csinálsz.)
-# =============================================================================
-
-import re
-import sys
-import time
-from pathlib import Path
-
-from PIL import Image
-
-# Biztosítjuk, hogy a generator csomag importálható legyen
-_script_dir = Path(__file__).parent
-if str(_script_dir) not in sys.path:
-    sys.path.insert(0, str(_script_dir))
-
-from generator.specs import ProductLine, spec_from_size_key, validate_size_key_for_product_line
-from generator.core.render_dispatcher import render_product
-
+# - "overpass": online Overpass API or "local": helyi .osm / .osm.xml fajl hasznalata
+DATA_SOURCE = "local"
 
 # --------------------------------------------------------------------------- #
-# KONSTANSOK
+# KÖZÖS PARAMÉTEREK
 # --------------------------------------------------------------------------- #
 
-MAX_WEBP_BYTES  = 150 * 1024   # 150 KB
-MAX_LONG_SIDE   = 1500          # px
-QUALITY_STEPS   = [88, 82, 76, 70, 64, 58, 52, 46, 40, 34, 28]
-
-
-# --------------------------------------------------------------------------- #
-# SEGÉDFÜGGVÉNYEK
-# --------------------------------------------------------------------------- #
-
-def _safe_name(text: str) -> str:
-    """Fájlnévbe biztonságos string (ékezetek, szóközök eltávolítása)."""
-    text = text.strip().upper()
-    # Ékezetes karakterek -> ASCII közelítés
-    replacements = {
-        "Á": "A", "É": "E", "Í": "I", "Ó": "O", "Ö": "O", "Ő": "O",
-        "Ú": "U", "Ü": "U", "Ű": "U",
-        "á": "A", "é": "E", "í": "I", "ó": "O", "ö": "O", "ő": "O",
-        "ú": "U", "ü": "U", "ű": "U",
-    }
-    for src, dst in replacements.items():
-        text = text.replace(src, dst)
-    # Maradék nem-alfanumerikus karakterek -> _
-    return re.sub(r"[^A-Z0-9]+", "_", text).strip("_")
-
-
-def _build_output_name(city: str, style: str, extent: int, size_key: str) -> str:
-    city_slug  = _safe_name(city)
-    style_slug = style.lower().replace(" ", "_")
-    size_slug  = size_key.replace("x", "x")
-    return f"{city_slug}_{style_slug}_{extent}m_{size_slug}.webp"
-
-
-def _resize_if_needed(img: Image.Image) -> Image.Image:
-    """Hosszabb oldal legfeljebb MAX_LONG_SIDE px."""
-    w, h = img.size
-    long_side = max(w, h)
-    if long_side <= MAX_LONG_SIDE:
-        return img
-    scale = MAX_LONG_SIDE / long_side
-    new_w = int(round(w * scale))
-    new_h = int(round(h * scale))
-    print(f"  → Átméretezés: {w}×{h} → {new_w}×{new_h} px")
-    return img.resize((new_w, new_h), Image.LANCZOS)
-
-
-def _save_webp(img: Image.Image, dest: Path) -> int:
-    """WebP mentés quality-léptetéssel, max MAX_WEBP_BYTES."""
-    for quality in QUALITY_STEPS:
-        img.save(dest, format="WEBP", quality=quality, method=6, optimize=True)
-        size = dest.stat().st_size
-        print(f"  → quality={quality}  →  {size / 1024:.1f} KB", end="")
-        if size <= MAX_WEBP_BYTES:
-            print("  ✓")
-            return size
-        print()
-
-    # Ha egyik sem elég: utolsó erőfeszítés (lossless=False, min quality)
-    img.save(dest, format="WEBP", quality=20, method=6, optimize=True)
-    size = dest.stat().st_size
-    print(f"  → quality=20 (minimum)  →  {size / 1024:.1f} KB  ⚠ méretkorlát nem teljesíthető")
-    return size
-
-
-def _delete_files(*paths: Path | None) -> None:
-    """Közbülső fájlok törlése."""
-    for p in paths:
-        if p and p.exists():
-            p.unlink()
-            print(f"  törölve: {p.name}")
-
+CITY_NAME = "HELSINKI"            # Cim a poszteren (es a fajlnevben)
+SIZE_KEY = "50x70"                # Plakatmeret kulcs (cm)
+STYLE = "vintage_atlas"           # Stilus neve (lasd fent)
+SUBTITLE = None                    # None -> automatikus koordinata felirat
+OUTPUT_DIR_BASE = "output"        # Kimeneti mappa (a project gyokerehez kepest)
+USE_CACHE = True                   # OSM gyorsitotar hasznalata
 
 # --------------------------------------------------------------------------- #
-# MAIN
+# OVERPASS / API MÓD PARAMÉTEREI
+# Csak akkor számítanak, ha DATA_SOURCE = "overpass"
 # --------------------------------------------------------------------------- #
+
+API_LAT = 44.8378                  # Szelessegi fok
+API_LON = -0.5792                  # Hosszusagi fok
+API_EXTENT_M = 5000                # Fel-extent meterben
+
+# --------------------------------------------------------------------------- #
+# LOCAL OSM/XML MÓD PARAMÉTEREI
+# Csak akkor számítanak, ha DATA_SOURCE = "local"
+# --------------------------------------------------------------------------- #
+
+# Ha None, akkor az input/osm mappabol a legfrissebb *.osm vagy *.osm.xml lesz hasznalva.
+# Ha megadod, lehet relativ (projecthez kepest) vagy abszolut utvonal.
+LOCAL_OSM_FILE = "input/osm/Helsinki.osm"
+
+# Ide mentsd a kezzel letoltott XML fajlokat:
+#   city_map_generator/input/osm/
+LOCAL_OSM_INPUT_DIR = "input/osm"
+
+# Ha True, a helyi OSM fajl bbox-abol automatikusan szamol center/extentet.
+# Ha False, akkor a lenti LOCAL_* center/extent ertekek lesznek hasznalva.
+LOCAL_AUTO_FIT_TO_FILE = True
+LOCAL_FIT_MARGIN = 0.90  # 0..1, kisebb = biztosabb peremhagyás
+
+# Kezi local center/extent csak akkor szamit, ha LOCAL_AUTO_FIT_TO_FILE = False
+LOCAL_LAT = 60.1710 
+LOCAL_LON = 24.9375
+LOCAL_EXTENT_M = 5000
+LOCAL_USE_CACHE = True             # Local mod cache: True=ON, False=OFF
+
+# Local extra render opciok
+LOCAL_RENDER_ALL_OBJECTS = False    # Local XML-bol minel tobb objektum betoltese/rajzolasa
+LOCAL_EXACT_WATER = True            # Local XML + Overpass pontos vizfelulet-egyesites
+LOCAL_HIDE_LABELS = False           # Local modban cim es koordinata elrejtese
+LOCAL_HIDE_VEGETATION = False       # Zoldteruletek elrejtese
+LOCAL_HIDE_TREES = True             # Fa-pontok elrejtese
+LOCAL_HIDE_WATER_LINES = True       # Vizfelszinen ne rajzoljon vonalakat
+
+
+
+
+
+
+from manual_render_common import ManualRenderConfig, render_style
+
 
 def main() -> None:
-    t0 = time.perf_counter()
-
-    # --- validáció ---
-    product_line = ProductLine.CITYMAP
-    validate_size_key_for_product_line(SIZE_KEY, product_line)
-
-    spec = spec_from_size_key(SIZE_KEY, extent_m=EXTENT_M, dpi=150)
-
-    output_dir = _script_dir / OUTPUT_DIR_BASE
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    subtitle_text = (
-        SUBTITLE
-        if SUBTITLE
-        else f"{LAT:.4f}° N  {LON:.4f}° E"
-    )
-
-    webp_name = _build_output_name(CITY_NAME, STYLE, EXTENT_M, SIZE_KEY)
-    webp_path = output_dir / webp_name
-
-    print("=" * 60)
-    print(f"  Város   : {CITY_NAME}")
-    print(f"  Stílus  : {STYLE}")
-    print(f"  Méret   : {SIZE_KEY} cm  |  extent: {EXTENT_M} m")
-    print(f"  Koord.  : {LAT}, {LON}")
-    print(f"  Kimenet : {webp_path}")
-    print("=" * 60)
-
-    # --- render (ideiglenes fájlok az output_dir-be kerülnek) ---
-    result = render_product(
+    result = render_style(
+        ManualRenderConfig(
+            data_source=DATA_SOURCE,
+            city_name=CITY_NAME,
+            size_key=SIZE_KEY,
+            subtitle=SUBTITLE,
+            output_dir_base=OUTPUT_DIR_BASE,
+            use_cache=USE_CACHE,
+            api_lat=API_LAT,
+            api_lon=API_LON,
+            api_extent_m=API_EXTENT_M,
+            local_osm_file=LOCAL_OSM_FILE,
+            local_osm_input_dir=LOCAL_OSM_INPUT_DIR,
+            local_auto_fit_to_file=LOCAL_AUTO_FIT_TO_FILE,
+            local_fit_margin=LOCAL_FIT_MARGIN,
+            local_lat=LOCAL_LAT,
+            local_lon=LOCAL_LON,
+            local_extent_m=LOCAL_EXTENT_M,
+            local_use_cache=LOCAL_USE_CACHE,
+            local_render_all_objects=LOCAL_RENDER_ALL_OBJECTS,
+            local_exact_water=LOCAL_EXACT_WATER,
+            local_hide_labels=LOCAL_HIDE_LABELS,
+            local_hide_vegetation=LOCAL_HIDE_VEGETATION,
+            local_hide_trees=LOCAL_HIDE_TREES,
+            local_hide_water_lines=LOCAL_HIDE_WATER_LINES,
+        ),
         style_name=STYLE,
-        center_lat=LAT,
-        center_lon=LON,
-        spec=spec,
-        output_dir=output_dir,
-        title=CITY_NAME,
-        subtitle=subtitle_text,
-        preview_mode=False,
-        order_id="MANUAL",
-        use_cache=USE_CACHE,
     )
-
-    # --- PNG → WebP konverzió ---
-    print("\n[WebP konverzió]")
-    with Image.open(result.output_png) as png_img:
-        img = _resize_if_needed(png_img.convert("RGB"))
-        final_size = _save_webp(img, webp_path)
-
-    print(f"\n  Végső fájl : {webp_path.name}  ({final_size / 1024:.1f} KB)")
-
-    # --- köztes fájlok törlése ---
-    print("\n[Takarítás]")
-    _delete_files(result.output_png, result.output_svg, result.output_pdf)
-
-    # Ha maradt ugyanolyan nevű PDF a pipeline-tól (line engine generálja)
-    possible_pdf = output_dir / (result.output_png.stem + ".pdf") if result.output_png else None
-    _delete_files(possible_pdf)
-
-    # Az esetleg generált pipeline-WebP törlése (ha nem a mi fájlunk)
-    pipeline_webp = output_dir / (result.output_png.stem.replace(".png", "") + ".webp") if result.output_png else None
-    if pipeline_webp and pipeline_webp != webp_path and pipeline_webp.exists():
-        _delete_files(pipeline_webp)
-
-    t1 = time.perf_counter()
-    print(f"\nKész! ({t1 - t0:.1f} s)")
+    print(f"\nKesz! ({result.elapsed_seconds:.1f} s)")
 
 
 if __name__ == "__main__":

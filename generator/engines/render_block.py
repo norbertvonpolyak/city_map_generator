@@ -9,6 +9,7 @@ from pathlib import Path
 import random
 import math
 import hashlib
+import os
 
 import geopandas as gpd
 import matplotlib.pyplot as plt
@@ -67,6 +68,73 @@ def _deterministic_color(geom, palette):
     h = hashlib.md5(key).hexdigest()
     idx = int(h, 16) % len(palette)
     return palette[idx]
+
+
+def _filter_pier_areas(gdf: gpd.GeoDataFrame | None) -> gpd.GeoDataFrame:
+    if gdf is None or len(gdf) == 0 or "man_made" not in gdf.columns:
+        return gpd.GeoDataFrame(geometry=[], crs=getattr(gdf, "crs", None))
+    man_made = gdf["man_made"].fillna("").astype(str).str.lower()
+    return gdf[man_made.eq("pier")].copy()
+
+
+def _buffer_waterways_to_polygons(waterway_gdf: gpd.GeoDataFrame, target_crs) -> gpd.GeoDataFrame:
+    if waterway_gdf is None or len(waterway_gdf) == 0:
+        return gpd.GeoDataFrame(geometry=[], crs=target_crs)
+
+    width_map = {
+        "river": 85.0,
+        "canal": 24.0,
+        "stream": 6.0,
+        "ditch": 3.0,
+        "drain": 2.5,
+        "dock": 22.0,
+    }
+
+    def _parse_width_m(value) -> float | None:
+        if value is None:
+            return None
+        text = str(value).strip().lower()
+        if not text or text in {"nan", "none"}:
+            return None
+        text = text.replace(",", ".")
+        for suffix in ("meters", "meter", "metres", "metre", "m"):
+            if text.endswith(suffix):
+                text = text[: -len(suffix)].strip()
+                break
+        try:
+            parsed = float(text)
+        except ValueError:
+            return None
+        if parsed <= 0:
+            return None
+        return parsed / 2.0
+
+    waterways = waterway_gdf[(~waterway_gdf.geometry.isna()) & (~waterway_gdf.geometry.is_empty)].to_crs(target_crs).copy()
+    waterways = waterways[waterways.geom_type.isin(["LineString", "MultiLineString", "Polygon", "MultiPolygon"])]
+    if len(waterways) == 0:
+        return gpd.GeoDataFrame(geometry=[], crs=target_crs)
+
+    line_mask = waterways.geom_type.isin(["LineString", "MultiLineString"])
+    polygons = []
+
+    if line_mask.any():
+        line_waterways = waterways[line_mask].copy()
+        line_waterways["_water_width"] = 10.0
+        if "waterway" in line_waterways.columns:
+            line_waterways["_water_width"] = line_waterways["waterway"].fillna("").astype(str).str.lower().map(width_map).fillna(line_waterways["_water_width"])
+        if "width" in line_waterways.columns:
+            parsed_widths = line_waterways["width"].apply(_parse_width_m)
+            line_waterways["_water_width"] = parsed_widths.combine_first(line_waterways["_water_width"])
+        polygons.extend(line_waterways.apply(lambda row: row.geometry.buffer(float(row["_water_width"])), axis=1).tolist())
+
+    if (~line_mask).any():
+        polygons.extend(waterways[~line_mask].geometry.tolist())
+
+    polygons = [geom for geom in polygons if geom is not None and not geom.is_empty]
+    if not polygons:
+        return gpd.GeoDataFrame(geometry=[], crs=target_crs)
+
+    return gpd.GeoDataFrame(geometry=polygons, crs=target_crs)
 
 def render_map_block(
     *,
@@ -151,6 +219,24 @@ def render_map_block(
                 water_p,
                 gpd.GeoSeries([clip_rect], crs=edges_p.crs)
             )
+
+        exact_water_mode = os.getenv("OSM_LOCAL_EXACT_WATER", "").strip().lower() in {"1", "true", "yes", "on"}
+        use_waterway_fallback = (not exact_water_mode) or len(water_p) == 0
+        if use_waterway_fallback:
+            waterway = shared_bundle.get("waterway_raw")
+            waterway_p = _buffer_waterways_to_polygons(waterway, edges_p.crs)
+            if len(waterway_p) > 0:
+                waterway_p = gpd.clip(
+                    waterway_p,
+                    gpd.GeoSeries([clip_rect], crs=edges_p.crs)
+                )
+                if len(water_p) > 0:
+                    water_p = gpd.GeoDataFrame(
+                        geometry=list(water_p.geometry) + list(waterway_p.geometry),
+                        crs=edges_p.crs,
+                    )
+                else:
+                    water_p = waterway_p
 
         # COASTLINE
 
@@ -299,57 +385,31 @@ def render_map_block(
             gpd.GeoSeries([clip_rect], crs=cells.crs)
         )
 
-        # classify water cells
+        water_union = unary_union(large_water.geometry) if len(large_water) > 0 else None
+        water_surface = gpd.GeoDataFrame(geometry=[], crs=edges_p.crs)
+        if water_union is not None and not water_union.is_empty:
+            water_surface = gpd.GeoDataFrame(
+                geometry=[water_union],
+                crs=edges_p.crs,
+            )
 
-        if len(large_water) > 0:
-
-            water_union = unary_union(large_water.geometry)
-            # Small expansion helps fragmented shore segments, but only when
-            # there is already true (unbuffered) water overlap.
-            water_mask = water_union.buffer(5)
-
-            def is_water_cell(poly):
-
-                raw_inter = poly.intersection(water_union)
-                if raw_inter.is_empty:
-                    # Never classify as water from buffered overlap only.
-                    return False
-
-                poly_area = poly.area
-                if poly_area <= 0:
-                    return False
-
-                raw_ratio = raw_inter.area / poly_area
-                if raw_ratio > 0.5:
-                    return True
-
-                buffered_inter = poly.intersection(water_mask)
-                if buffered_inter.is_empty:
-                    return False
-
-                buffered_ratio = buffered_inter.area / poly_area
-                return raw_ratio > 0.03 and buffered_ratio > 0.2
-
-            cells["is_water"] = cells.geometry.apply(is_water_cell)
-
-        else:
-
-            cells["is_water"] = False
-
-        if island_union is not None:
-
-            def is_island_cell(poly):
-                inter = poly.intersection(island_union)
-                if inter.is_empty or poly.area <= 0:
-                    return False
-                return (inter.area / poly.area) > 0.15
-
-            island_cells = cells.geometry.apply(is_island_cell)
-            cells.loc[island_cells, "is_water"] = False
+        water_structures = shared_bundle.get("water_structures_raw")
+        pier_areas = _filter_pier_areas(water_structures)
+        pier_p = gpd.GeoDataFrame(geometry=[], crs=edges_p.crs)
+        if len(pier_areas) > 0:
+            pier_p = pier_areas.to_crs(edges_p.crs)
+            pier_p = pier_p[pier_p.geom_type.isin(["Polygon", "MultiPolygon"])]
+            if len(pier_p) > 0:
+                pier_p = gpd.clip(
+                    pier_p,
+                    gpd.GeoSeries([clip_rect], crs=edges_p.crs)
+                )
 
         return {
             "cells": cells,
             "roads": edges_p,
+            "water_surface": water_surface,
+            "pier_p": pier_p,
             "bounds": (minx, maxx, miny, maxy),
         }
 
@@ -360,12 +420,15 @@ def render_map_block(
         half_width_m=half_width_m,
         half_height_m=half_height_m,
         use_cache=use_cache,
+        include_building_features=True,
     )
 
     geometry_data = _build_geometry()
 
     cells = geometry_data["cells"]
     edges_p = geometry_data["roads"]
+    water_surface = geometry_data["water_surface"]
+    pier_p = geometry_data["pier_p"]
 
     minx, maxx, miny, maxy = geometry_data["bounds"]
 
@@ -374,12 +437,14 @@ def render_map_block(
         dpi=300
     )
 
-    water_cells = cells[cells["is_water"]]
-    land_cells = cells[~cells["is_water"]].copy()
+    land_cells = cells.copy()
+    if len(water_surface) > 0:
+        water_union = water_surface.geometry.iloc[0]
+        land_cells["geometry"] = land_cells.geometry.apply(lambda geom: geom.difference(water_union))
+        land_cells = land_cells[(~land_cells.geometry.isna()) & (~land_cells.geometry.is_empty)]
+        land_cells = land_cells[land_cells.geom_type.isin(["Polygon", "MultiPolygon"])]
 
-    if len(water_cells) > 0:
-
-        water_cells.plot(
+        water_surface.plot(
             ax=ax,
             color=style_cfg.water,
             edgecolor="none",
@@ -397,6 +462,15 @@ def render_map_block(
         edgecolor="none",
         zorder=2
     )
+
+    if len(pier_p) > 0:
+        pier_p.plot(
+            ax=ax,
+            color=style_cfg.road,
+            edgecolor="none",
+            alpha=0.92,
+            zorder=2.4,
+        )
 
     base_width = style_cfg.road_style.base_width
     extent_scale = _road_width_scale_for_extent(spec.extent_m)
