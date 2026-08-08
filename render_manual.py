@@ -28,21 +28,23 @@ from __future__ import annotations
 #  PARAMÉTEREK – IDE ÍRD ÁT!
 # =============================================================================
 
-CITY_NAME   = "PRAGUE"          # Cím a poszteren (és a fájlnévben)
-LAT         = 50.0903      # Szélességi fok
-LON         = 14.4177             # Hosszúsági fok
-EXTENT_M    = 5000                # Fél-extent méterben (pl. 2000 = ~4 km átmérő)
+CITY_NAME   = "MOSCOV"          # Cím a poszteren (és a fájlnévben)
+LAT         = 55.7525      # Szélességi fok
+LON         = 37.6226             # Hosszúsági fok
+EXTENT_M    = 3000                # Fél-extent méterben (pl. 2000 = ~4 km átmérő)
 SIZE_KEY    = "50x70"             # Plakátméret kulcs (cm)
-STYLE       = "luxury_gold"    # Stílus neve (lásd fent)
+STYLE       = "midnight_blue"    # Stílus neve (lásd fent)
 SUBTITLE    = None                # None → automatikus koordináta felirat
 OUTPUT_DIR_BASE = "output"        # Kimeneti mappa (a project gyökéréhez képest)
 USE_CACHE   = True                # OSM gyorsítótár használata
+OVERPASS_DEBUG = True            # True -> részletes Overpass diagnosztikai log
 
 # =============================================================================
 # (Alatta nem kell módosítani, hacsak nem tudod, mit csinálsz.)
 # =============================================================================
 
 import re
+import os
 import sys
 import time
 from pathlib import Path
@@ -140,6 +142,12 @@ def _delete_files(*paths: Path | None) -> None:
 def main() -> None:
     t0 = time.perf_counter()
 
+    prev_overpass_debug = os.environ.get("OVERPASS_DEBUG")
+    if OVERPASS_DEBUG:
+        os.environ["OVERPASS_DEBUG"] = "1"
+    else:
+        os.environ.pop("OVERPASS_DEBUG", None)
+
     # --- validáció ---
     product_line = ProductLine.CITYMAP
     validate_size_key_for_product_line(SIZE_KEY, product_line)
@@ -163,22 +171,29 @@ def main() -> None:
     print(f"  Stílus  : {STYLE}")
     print(f"  Méret   : {SIZE_KEY} cm  |  extent: {EXTENT_M} m")
     print(f"  Koord.  : {LAT}, {LON}")
+    print(f"  Overpass debug: {'ON' if OVERPASS_DEBUG else 'OFF'}")
     print(f"  Kimenet : {webp_path}")
     print("=" * 60)
 
     # --- render (ideiglenes fájlok az output_dir-be kerülnek) ---
-    result = render_product(
-        style_name=STYLE,
-        center_lat=LAT,
-        center_lon=LON,
-        spec=spec,
-        output_dir=output_dir,
-        title=CITY_NAME,
-        subtitle=subtitle_text,
-        preview_mode=False,
-        order_id="MANUAL",
-        use_cache=USE_CACHE,
-    )
+    try:
+        result = render_product(
+            style_name=STYLE,
+            center_lat=LAT,
+            center_lon=LON,
+            spec=spec,
+            output_dir=output_dir,
+            title=CITY_NAME,
+            subtitle=subtitle_text,
+            preview_mode=False,
+            order_id="MANUAL",
+            use_cache=USE_CACHE,
+        )
+    finally:
+        if prev_overpass_debug is None:
+            os.environ.pop("OVERPASS_DEBUG", None)
+        else:
+            os.environ["OVERPASS_DEBUG"] = prev_overpass_debug
 
     # --- PNG → WebP konverzió ---
     print("\n[WebP konverzió]")
