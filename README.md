@@ -248,6 +248,108 @@ Current bridge color rules in Building Engine:
 
 ---
 
+# 🧩 Modular OSM Cache Architecture
+
+The shared OSM bundle loader now uses a modular cache layout inside `generator/core/osm_bundle_cache.py` while keeping the public bundle contract unchanged for render engines.
+
+## 1️⃣ Road Graph Cache
+
+- The road network is cached independently from feature layers.  
+- `_load_or_build_road_graph(...)` is responsible only for the `graph_from_point(...)` request and the reusable road graph pickle.  
+- At runtime, the graph is converted to `edges_raw` with `ox.graph_to_gdfs(...)` before bundle assembly.  
+- The road graph cache can also reuse the smallest cached distance superset that still covers the requested render radius.  
+
+## 2️⃣ Per-Layer Feature Cache
+
+- OSM feature layers are cached individually through `_load_or_build_feature_layer(...)`.  
+- The current implementation supports separate cache entries for: `buildings`, `trees`, `waterway`, `railway`, `paths`, `water`, `green`, `coast`, and `islands`.  
+- `_load_or_build_feature_layers(...)` selects only the layers required for the current render path.  
+- Shared layers such as `water`, `green`, `coast`, and `islands` are reusable across engines, while building-specific layers are loaded only when `include_building_features=True`.  
+
+## 3️⃣ Stateless Bundle Assembler
+
+- `_assemble_runtime_bundle(...)` combines `edges_raw` and the loaded feature layers into the same in-memory bundle shape that the engines already expect.  
+- The assembled bundle still exposes keys such as `edges_raw`, `gdf_all_raw`, `trees_raw`, `waterway_raw`, `railway_raw`, `paths_raw`, `water_raw`, `green_raw`, `coast_raw`, and `islands_raw`.  
+- Block, Building, and Line render engines continue to consume that assembled bundle through `load_or_build_shared_osm_bundle(...)` exactly as before.  
+- This is an architectural refactor intended to improve cache reuse and observability without changing the intended rendering behavior.  
+
+## Cache Identity
+
+### Road Graph Cache Key
+
+Road graph cache filenames are built from:
+
+- center latitude and longitude  
+- the road filter hash (`rf...`) derived from the current `_ROAD_CUSTOM_FILTER`  
+- the simplify flag (`s0` / `s1`)  
+- the road cache version (`v1`)  
+- the effective graph query distance (`d...`)  
+
+This means road graph identity follows the actual graph query inputs, not engine mode.
+
+### Feature Layer Cache Key
+
+Feature layer cache filenames are built from:
+
+- layer name  
+- center latitude and longitude  
+- effective query distance (`d...`)  
+- a stable hash of the exact OSM tag payload (`qh...`)  
+- the layer cache version (`v1`)  
+
+Because each layer has its own identity, a missing or changed layer can be rebuilt independently without forcing a rebuild of unrelated layers.
+
+### Why Graph Identity Ignores Building Mode
+
+- The road graph cache is not keyed by `include_building_features`.  
+- The public loader keeps `extent_m` only for API compatibility, while road graph identity is derived from the effective distance actually used for the graph request.  
+- Building mode changes which feature layers are requested, but it does not change the road network query itself.  
+- This improves cache reuse across render engines because the same road graph can be shared by Block, Building, and Line renders for the same center and distance.  
+
+## Runtime Diagnostics
+
+When `OVERPASS_DEBUG` is enabled, the OSM bundle loader prints several diagnostic blocks for debugging and performance analysis.
+
+### `OVERPASS SUMMARY`
+
+- Summarizes each Overpass-backed query by label.  
+- Shows elapsed time and whether the query completed successfully or failed.  
+- Helps identify the slowest external requests.  
+
+### `OSM CACHE PROFILE`
+
+- Reports measurable per-query payload characteristics for successful OSM fetches.  
+- Includes object counts plus estimated in-memory and pickle sizes when available.  
+- Helps explain which fetched layers contribute most to cache size.  
+
+### `BUNDLE PROFILE`
+
+- Measures the assembled runtime bundle itself.  
+- Shows the relative pickle footprint of each bundle member such as `gdf_all_raw`, `edges_raw`, or `water_raw`.  
+- Helps reveal which bundle components dominate memory and serialization cost.  
+
+### `OPTIMIZATION HINTS`
+
+- Compares the assembled bundle against the current per-engine consumption map.  
+- Highlights which bundle members are unused by Block, Building, or Line rendering.  
+- Surfaces the largest contributors that are the most interesting optimization targets.  
+
+### `CACHE RUNTIME STATS`
+
+- Reports Road Graph Cache and Layer Cache hit/miss/build counters for the current render.  
+- Includes bundle assembly elapsed time and the total number of Overpass calls made during the render.  
+- Makes cache reuse visible without inspecting the cache directory manually.  
+
+## Expected Benefits
+
+- Fewer redundant Overpass requests because the road network and feature layers no longer need to be rebuilt as one monolithic unit.  
+- Reusable road graph across Block, Building, and Line engines when the graph query identity matches.  
+- Independent feature layer reuse, including shared layers that are needed by multiple engines.  
+- Smaller rebuild scope when only one layer is missing, stale, or newly requested.  
+- Improved diagnostics and cache visibility during debugging and performance investigation.  
+
+---
+
 # 📐 Size Logic
 
 All product sizes follow:
