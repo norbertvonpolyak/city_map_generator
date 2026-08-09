@@ -29,7 +29,7 @@ from __future__ import annotations
 # =============================================================================
 
 CITY_NAME   = "MOSCOV"          # Cím a poszteren (és a fájlnévben)
-LAT         = 55.7525      # Szélességi fok
+LAT         = 55.7526      # Szélességi fok
 LON         = 37.6226             # Hosszúsági fok
 EXTENT_M    = 3000                # Fél-extent méterben (pl. 2000 = ~4 km átmérő)
 SIZE_KEY    = "50x70"             # Plakátméret kulcs (cm)

@@ -203,7 +203,6 @@ def render_map_building(
     filename_prefix: str = "map_layer_building",
     preview_mode: bool = False,
     network_type_draw: str = "drive",
-    zoom: float = 0.6,
     min_building_area: float = 15.0,
     use_cache: bool = True,
 ) -> MapLayerResult:
@@ -235,9 +234,6 @@ def render_map_building(
     fig_w_in = map_width_cm / 2.54
     fig_h_in = map_height_cm / 2.54
     half_width_m, half_height_m = viewport_half_width_m, viewport_half_height_m
-
-    half_width_m *= zoom
-    half_height_m *= zoom
 
     dist_m = int(np.ceil((half_width_m**2 + half_height_m**2) ** 0.5)) + 300
 
@@ -381,6 +377,26 @@ def render_map_building(
             railway_p.geom_type.isin(["LineString", "MultiLineString"])
         ]
 
+        islands_p = gpd.GeoDataFrame(geometry=[], crs=gdf_all_p.crs)
+        if not render_only_buildings:
+            islands = shared_bundle["islands_raw"]
+
+            if islands is not None and len(islands) > 0:
+                islands = islands[islands.geometry.notnull()]
+
+                islands_p = ox.projection.project_gdf(islands)
+
+                islands_p = islands_p[
+                    islands_p.geom_type.isin(["Polygon", "MultiPolygon"])
+                ]
+
+                islands_p = gpd.clip(
+                    islands_p,
+                    gpd.GeoSeries([clip_rect], crs=islands_p.crs),
+                )
+
+                islands_p = islands_p[~islands_p.is_empty]
+
         coast_water = None
         if not render_only_buildings:
             coast = shared_bundle["coast_raw"]
@@ -422,6 +438,7 @@ def render_map_building(
             "waterway_p": waterway_p,
             "railway_p": railway_p,
             "paths_p": paths_p,
+            "islands_p": islands_p,
             "coast_water": coast_water,
             "bounds": (minx, maxx, miny, maxy),
         }
@@ -444,6 +461,7 @@ def render_map_building(
     waterway_p = geometry_data["waterway_p"]
     railway_p = geometry_data["railway_p"]
     paths_p = geometry_data["paths_p"]
+    islands_p = geometry_data["islands_p"]
     coast_water = geometry_data["coast_water"]
     minx, maxx, miny, maxy = geometry_data["bounds"]
 
@@ -603,38 +621,45 @@ def render_map_building(
         # water
         dissolved_water = None
         water_mask_geom = None
+        island_union = unary_union(islands_p.geometry) if len(islands_p) > 0 else None
         if len(water_p) > 0:
             water_union = unary_union(water_p.geometry)
             water_union = _fill_polygon_holes(water_union)
+            if island_union is not None and not island_union.is_empty:
+                water_union = water_union.difference(island_union)
             dissolved_water = gpd.GeoDataFrame(
                 geometry=[water_union],
                 crs=water_p.crs,
             )
+            dissolved_water = dissolved_water[~dissolved_water.is_empty]
             water_mask_geom = water_union
-            dissolved_water.plot(
-                ax=ax,
-                color=style_cfg.water,
-                edgecolor="none",
-                linewidth=0,
-                zorder=1,
-            )
-            if use_surface_texture:
-                _plot_dotted_texture(
-                    ax,
-                    dissolved_water,
-                    spacing_m=10,
-                    dot_size=17.0,
-                    color="#3F6F8B",
-                    alpha=0.72,
-                    zorder=1.08,
-                    rng=texture_rng,
+            if len(dissolved_water) > 0:
+                dissolved_water.plot(
+                    ax=ax,
+                    color=style_cfg.water,
+                    edgecolor="none",
+                    linewidth=0,
+                    zorder=1,
                 )
+                if use_surface_texture:
+                    _plot_dotted_texture(
+                        ax,
+                        dissolved_water,
+                        spacing_m=10,
+                        dot_size=17.0,
+                        color="#3F6F8B",
+                        alpha=0.72,
+                        zorder=1.08,
+                        rng=texture_rng,
+                    )
 
         # Waterway is used only as a fallback when no water polygons are present.
         # Dissolving avoids inner seams from overlapping buffered centerlines.
         if len(waterway_p) > 0 and dissolved_water is None:
             waterway_union = unary_union(waterway_p.geometry)
             waterway_union = _fill_polygon_holes(waterway_union)
+            if island_union is not None and not island_union.is_empty:
+                waterway_union = waterway_union.difference(island_union)
             waterway_fill = gpd.GeoDataFrame(
                 geometry=[waterway_union],
                 crs=waterway_p.crs,
@@ -662,26 +687,35 @@ def render_map_building(
 
         # coastline water (Balaton)
         if coast_water is not None and len (coast_water) > 0:
-            coast_water.plot (
-                ax=ax,
-                color=style_cfg.water,
-                edgecolor="none",
-                linewidth=0,
-                zorder=0,
-            )
-            coast_union = unary_union(coast_water.geometry)
-            water_mask_geom = coast_union if water_mask_geom is None else unary_union([water_mask_geom, coast_union])
-            if use_surface_texture:
-                _plot_dotted_texture(
-                    ax,
-                    coast_water,
-                    spacing_m=10,
-                    dot_size=17.0,
-                    color="#3F6F8B",
-                    alpha=0.72,
-                    zorder=0.08,
-                    rng=texture_rng,
+            coast_to_plot = coast_water
+            if island_union is not None and not island_union.is_empty:
+                coast_to_plot = coast_to_plot.copy()
+                coast_to_plot["geometry"] = coast_to_plot.geometry.apply(
+                    lambda geom: geom.difference(island_union)
                 )
+                coast_to_plot = coast_to_plot[~coast_to_plot.is_empty]
+
+            if len(coast_to_plot) > 0:
+                coast_to_plot.plot (
+                    ax=ax,
+                    color=style_cfg.water,
+                    edgecolor="none",
+                    linewidth=0,
+                    zorder=0,
+                )
+                coast_union = unary_union(coast_to_plot.geometry)
+                water_mask_geom = coast_union if water_mask_geom is None else unary_union([water_mask_geom, coast_union])
+                if use_surface_texture:
+                    _plot_dotted_texture(
+                        ax,
+                        coast_to_plot,
+                        spacing_m=10,
+                        dot_size=17.0,
+                        color="#3F6F8B",
+                        alpha=0.72,
+                        zorder=0.08,
+                        rng=texture_rng,
+                    )
 
         if len(beach_p) > 0:
             beach_p = _mask_out_water(beach_p, water_mask_geom)
