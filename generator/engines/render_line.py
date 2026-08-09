@@ -216,6 +216,8 @@ def render_map_line(
     map_height_cm: float,
     viewport_half_width_m: float,
     viewport_half_height_m: float,
+    bundle_half_width_m: Optional[float] = None,
+    bundle_half_height_m: Optional[float] = None,
     output_dir: Path,
     palette_name: str,
     seed: Optional[int] = 42,
@@ -241,6 +243,8 @@ def render_map_line(
     fig_w_in = map_width_cm / 2.54
     fig_h_in = map_height_cm / 2.54
     half_width_m, half_height_m = viewport_half_width_m, viewport_half_height_m
+    bundle_hw = half_width_m if bundle_half_width_m is None else float(bundle_half_width_m)
+    bundle_hh = half_height_m if bundle_half_height_m is None else float(bundle_half_height_m)
     extent_m = int(spec.extent_m)
     # -----------------------------------------------------------------------
     # CENTER + CLIP
@@ -285,8 +289,8 @@ def render_map_line(
         center_lat=center_lat,
         center_lon=center_lon,
         extent_m=extent_m,
-        half_width_m=half_width_m,
-        half_height_m=half_height_m,
+        half_width_m=bundle_hw,
+        half_height_m=bundle_hh,
         use_cache=use_cache,
     )
 
@@ -348,6 +352,7 @@ def render_map_line(
     water_lum = _relative_luminance(render_cfg.water)
     water_edge_target = "#F6F4EF" if water_lum < 0.55 else "#3A3A3A"
     water_edge = _blend_towards(render_cfg.water, water_edge_target, 0.18)
+    water_alpha = 0.4 if palette_name == "vintage_atlas" else 0.78
     bridge_color = _blend_towards(
         render_cfg.road_colors.get("primary", render_cfg.road_colors.get("default", "#666666")),
         "#FFFFFF" if water_lum < 0.55 else "#111111",
@@ -360,7 +365,7 @@ def render_map_line(
             color=render_cfg.water,
             edgecolor=water_edge,
             linewidth=0.35,
-            alpha=0.78,
+            alpha=water_alpha,
             antialiased=True,
             zorder=1,
         )

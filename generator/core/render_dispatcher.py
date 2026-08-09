@@ -12,6 +12,10 @@ from generator.layouts.layout_utils import build_poster_layout, compose_poster_o
 from generator.layouts.layout_block import compose_layout_block
 from generator.layouts.layout_building import compose_layout_building
 from generator.core.style_registry import STYLE_REGISTRY, EngineType
+from generator.core.bundle_viewport_policy import (
+    DEFAULT_BUNDLE_VIEWPORT_POLICY,
+    compute_osm_bundle_viewport,
+)
 from generator.styles import get_style_config, BlockStyleConfig, BuildingStyleConfig, MaptoposterLineStyleConfig
 from uuid import uuid4
 
@@ -39,15 +43,7 @@ def _generate_order_filename(order_id: str, spec: ProductSpec) -> str:
 # VIEWPORT HELPER
 # ==========================================================
 
-def get_viewport_for_style(style_name: str, spec) -> tuple[float, float]:
-    """Return (half_width_m, half_height_m) for the given style and spec.
-
-    This replicates the layout computation from render_product so that callers
-    can pre-warm the OSM bundle cache for every unique viewport before rendering.
-    """
-    if style_name not in STYLE_REGISTRY:
-        raise ValueError(f"Unknown style: {style_name}")
-
+def _build_layout_for_style(style_name: str, spec: ProductSpec):
     style_cfg = get_style_config(style_name)
 
     if isinstance(style_cfg, MaptoposterLineStyleConfig):
@@ -70,7 +66,7 @@ def get_viewport_for_style(style_name: str, spec) -> tuple[float, float]:
     elif style_name == "old_time_fantasy" and STYLE_REGISTRY[style_name].engine == EngineType.LINE:
         bottom_margin_ratio = 0.15
 
-    layout = build_poster_layout(
+    return build_poster_layout(
         spec.width_cm,
         spec.height_cm,
         uniform_margins=uniform_margins,
@@ -78,6 +74,18 @@ def get_viewport_for_style(style_name: str, spec) -> tuple[float, float]:
         style_name=style_name,
         layout_config=layout_config,
     )
+
+
+def get_viewport_for_style(style_name: str, spec) -> tuple[float, float]:
+    """Return (half_width_m, half_height_m) for the given style and spec.
+
+    This replicates the layout computation from render_product so that callers
+    can pre-warm the OSM bundle cache for every unique viewport before rendering.
+    """
+    if style_name not in STYLE_REGISTRY:
+        raise ValueError(f"Unknown style: {style_name}")
+
+    layout = _build_layout_for_style(style_name, spec)
     return layout.map_viewport_half_sizes_m(spec.extent_m)
 
 
@@ -106,11 +114,6 @@ def render_product(
     style_def = STYLE_REGISTRY[style_name]
     style_cfg = get_style_config(style_name)
 
-    if isinstance(style_cfg, MaptoposterLineStyleConfig):
-        uniform_margins = style_cfg.layout.uniform_margins
-    else:
-        uniform_margins = STYLE_REGISTRY[style_name].engine == EngineType.LINE
-
     use_poster_level_texture = (
         isinstance(style_cfg, MaptoposterLineStyleConfig)
         and style_cfg.layout.passepartout_opacity <= 0.001
@@ -118,32 +121,17 @@ def render_product(
         and style_cfg.render.background_texture_opacity > 0
     )
 
-    bottom_margin_ratio = None
-    layout_config = None
-
-    if isinstance(style_cfg, MaptoposterLineStyleConfig):
-        bottom_margin_ratio = style_cfg.layout.bottom_margin_ratio
-        # Prepare vintage_atlas layout config
-        if style_name == "vintage_atlas":
-            layout_config = {
-                'side_margin_ratio': style_cfg.layout.side_margin_ratio,
-                'bottom_margin_multiplier': style_cfg.layout.bottom_margin_multiplier,
-                'text_vertical_centering': style_cfg.layout.text_vertical_centering,
-                'title_above_coordinates': style_cfg.layout.title_above_coordinates,
-            }
-    elif style_name == "old_time_fantasy" and STYLE_REGISTRY[style_name].engine == EngineType.LINE:
-        # Taller lower passepartout to match premium reference composition.
-        bottom_margin_ratio = 0.15
-
-    layout = build_poster_layout(
-        spec.width_cm,
-        spec.height_cm,
-        uniform_margins=uniform_margins,
-        bottom_margin_ratio=bottom_margin_ratio,
-        style_name=style_name,
-        layout_config=layout_config,
-    )
+    layout = _build_layout_for_style(style_name, spec)
     viewport_half_width_m, viewport_half_height_m = layout.map_viewport_half_sizes_m(spec.extent_m)
+    bundle_half_width_m, bundle_half_height_m = compute_osm_bundle_viewport(
+        spec,
+        DEFAULT_BUNDLE_VIEWPORT_POLICY,
+    )
+
+    if bundle_half_width_m < viewport_half_width_m or bundle_half_height_m < viewport_half_height_m:
+        raise RuntimeError(
+            "OSM Bundle Viewport contract breach: bundle viewport must contain renderer viewport."
+        )
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -177,6 +165,8 @@ def render_product(
                 map_height_cm=layout.visible_height_cm,
                 viewport_half_width_m=viewport_half_width_m,
                 viewport_half_height_m=viewport_half_height_m,
+                bundle_half_width_m=bundle_half_width_m,
+                bundle_half_height_m=bundle_half_height_m,
                 output_dir=temp_output_dir,
                 palette_name=style_name,
                 preview_mode=preview_mode,
@@ -195,6 +185,8 @@ def render_product(
                 map_height_cm=layout.visible_height_cm,
                 viewport_half_width_m=viewport_half_width_m,
                 viewport_half_height_m=viewport_half_height_m,
+                bundle_half_width_m=bundle_half_width_m,
+                bundle_half_height_m=bundle_half_height_m,
                 output_dir=temp_output_dir,
                 palette_name=style_name,
                 preview_mode=preview_mode,
@@ -212,6 +204,8 @@ def render_product(
                 map_height_cm=layout.visible_height_cm,
                 viewport_half_width_m=viewport_half_width_m,
                 viewport_half_height_m=viewport_half_height_m,
+                bundle_half_width_m=bundle_half_width_m,
+                bundle_half_height_m=bundle_half_height_m,
                 output_dir=temp_output_dir,
                 palette_name=style_name,
                 preview_mode=preview_mode,

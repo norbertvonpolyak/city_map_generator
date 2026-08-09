@@ -33,7 +33,7 @@ LAT         = 55.7526      # Szélességi fok
 LON         = 37.6226             # Hosszúsági fok
 EXTENT_M    = 3000                # Fél-extent méterben (pl. 2000 = ~4 km átmérő)
 SIZE_KEY    = "50x70"             # Plakátméret kulcs (cm)
-STYLE       = "midnight_blue"    # Stílus neve (lásd fent)
+STYLE       = "vintage_atlas"    # Stílus neve (lásd fent)
 SUBTITLE    = None                # None → automatikus koordináta felirat
 OUTPUT_DIR_BASE = "output"        # Kimeneti mappa (a project gyökéréhez képest)
 USE_CACHE   = True                # OSM gyorsítótár használata
