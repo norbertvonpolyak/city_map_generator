@@ -77,6 +77,8 @@ def render_map_block(
     map_height_cm: float,
     viewport_half_width_m: float,
     viewport_half_height_m: float,
+    bundle_half_width_m: Optional[float] = None,
+    bundle_half_height_m: Optional[float] = None,
     output_dir: Optional[Path] = None,
     palette_name: str,
     seed: int = 42,
@@ -99,6 +101,9 @@ def render_map_block(
 
     half_height_m = viewport_half_height_m
     half_width_m = viewport_half_width_m
+
+    bundle_hw = half_width_m if bundle_half_width_m is None else float(bundle_half_width_m)
+    bundle_hh = half_height_m if bundle_half_height_m is None else float(bundle_half_height_m)
 
     dist_m = int(math.ceil(math.sqrt(half_width_m**2 + half_height_m**2))) + 300
 
@@ -357,8 +362,8 @@ def render_map_block(
         center_lat=center_lat,
         center_lon=center_lon,
         extent_m=spec.extent_m,
-        half_width_m=half_width_m,
-        half_height_m=half_height_m,
+        half_width_m=bundle_hw,
+        half_height_m=bundle_hh,
         use_cache=use_cache,
     )
 

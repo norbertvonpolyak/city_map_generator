@@ -467,7 +467,7 @@ STYLES = {
             background="#FCFCFB32",
             text="#2B2A2A",
 
-            water="#EFEFEF",
+            water="#FFFFFF",
             parks="#7D756D",
 
             road_colors={

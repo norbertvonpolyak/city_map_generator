@@ -38,6 +38,7 @@ except Exception:
     _REQUESTS_HTTP_ERROR = ()
 
 from generator.core.cache import load_or_build_geometry
+from generator.core.bundle_viewport_policy import bundle_viewport_policy_cache_token
 
 
 _ROAD_CUSTOM_FILTER = (
@@ -53,8 +54,9 @@ OVERPASS_URLS = [
 
 _ENDPOINT_ROTATION_COUNTER = count()
 
-_ROAD_CACHE_VERSION = "v1"
-_LAYER_CACHE_VERSION = "v1"
+_POLICY_TOKEN = bundle_viewport_policy_cache_token()
+_ROAD_CACHE_VERSION = f"v1_{_POLICY_TOKEN}"
+_LAYER_CACHE_VERSION = f"v1_{_POLICY_TOKEN}"
 
 
 _FEATURE_TAGS_BUILDINGS = {
