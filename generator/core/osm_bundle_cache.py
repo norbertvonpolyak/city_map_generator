@@ -15,6 +15,28 @@ import osmnx as ox
 from osmnx._errors import InsufficientResponseError
 from shapely.geometry import Point
 
+try:
+    from requests.exceptions import (
+        ConnectTimeout as RequestsConnectTimeout,
+        ConnectionError as RequestsConnectionError,
+        HTTPError as RequestsHTTPError,
+        ProxyError as RequestsProxyError,
+        ReadTimeout as RequestsReadTimeout,
+        Timeout as RequestsTimeout,
+    )
+
+    _REQUESTS_NETWORK_EXCEPTIONS: tuple[type[BaseException], ...] = (
+        RequestsConnectTimeout,
+        RequestsReadTimeout,
+        RequestsTimeout,
+        RequestsConnectionError,
+        RequestsProxyError,
+    )
+    _REQUESTS_HTTP_ERROR = RequestsHTTPError
+except Exception:
+    _REQUESTS_NETWORK_EXCEPTIONS = ()
+    _REQUESTS_HTTP_ERROR = ()
+
 from generator.core.cache import load_or_build_geometry
 
 
@@ -656,6 +678,85 @@ def _print_cache_runtime_stats(cache_stats: dict[str, object], overpass_calls: i
     print("=========================================")
 
 
+def _empty_layer_gdf() -> gpd.GeoDataFrame:
+    return gpd.GeoDataFrame(geometry=[], crs="EPSG:4326")
+
+
+def _iter_exception_chain(error: Exception):
+    seen: set[int] = set()
+    current: Exception | None = error
+    while current is not None and id(current) not in seen:
+        yield current
+        seen.add(id(current))
+        next_error = current.__cause__ or current.__context__
+        current = next_error if isinstance(next_error, Exception) else None
+
+
+def _http_status_code(error: Exception) -> int | None:
+    response = getattr(error, "response", None)
+    status_code = getattr(response, "status_code", None)
+    if isinstance(status_code, int):
+        return status_code
+
+    status_code = getattr(error, "status_code", None)
+    if isinstance(status_code, int):
+        return status_code
+
+    return None
+
+
+def _is_transient_network_error(error: Exception) -> bool:
+    for candidate in _iter_exception_chain(error):
+        if _REQUESTS_NETWORK_EXCEPTIONS and isinstance(candidate, _REQUESTS_NETWORK_EXCEPTIONS):
+            return True
+
+        if _REQUESTS_HTTP_ERROR and isinstance(candidate, _REQUESTS_HTTP_ERROR):
+            status = _http_status_code(candidate)
+            if isinstance(status, int) and 500 <= status <= 599:
+                return True
+
+        status = _http_status_code(candidate)
+        if isinstance(status, int) and 500 <= status <= 599:
+            return True
+
+        cls_name = type(candidate).__name__.lower()
+        msg = str(candidate).lower()
+
+        if any(
+            token in cls_name
+            for token in (
+                "connecttimeout",
+                "readtimeout",
+                "timeout",
+                "proxyerror",
+                "connectionerror",
+                "connectionreset",
+                "temporaryfailure",
+            )
+        ):
+            return True
+
+        if any(
+            token in msg
+            for token in (
+                "timed out",
+                "temporarily unavailable",
+                "temporary failure",
+                "name or service not known",
+                "connection reset",
+                "connection aborted",
+                "connection refused",
+                "proxy error",
+                "bad gateway",
+                "service unavailable",
+                "gateway timeout",
+            )
+        ):
+            return True
+
+    return False
+
+
 def _load_or_build_road_graph(
     *,
     center_lat: float,
@@ -767,11 +868,27 @@ def _load_or_build_feature_layer(
             overpass_call_counter=overpass_call_counter,
         )
     except InsufficientResponseError:
+        if layer_name == "islands":
+            result = _empty_layer_gdf()
+            print("[CACHE] Layer EMPTY [islands]")
+            print("reason=No matching features")
+            print("cached=yes")
+            if use_cache:
+                _write_pickle(cache_path, result)
+            return result
+
         if missing_message:
             print(missing_message)
             result = None
         else:
             raise
+    except Exception as error:
+        if layer_name == "islands" and _is_transient_network_error(error):
+            print("[CACHE] Layer FALLBACK [islands]: temporary empty layer")
+            print(f"reason={type(error).__name__}")
+            print("not cached")
+            return _empty_layer_gdf()
+        raise
 
     if use_cache:
         _write_pickle(cache_path, result)
