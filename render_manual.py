@@ -28,16 +28,17 @@ from __future__ import annotations
 #  PARAMÉTEREK – IDE ÍRD ÁT!
 # =============================================================================
 
-CITY_NAME   = "MOSCOV"          # Cím a poszteren (és a fájlnévben)
-LAT         = 55.7526      # Szélességi fok
-LON         = 37.6226             # Hosszúsági fok
-EXTENT_M    = 3000                # Fél-extent méterben (pl. 2000 = ~4 km átmérő)
+CITY_NAME   = "DENPASAR"          # Cím a poszteren (és a fájlnévben)
+LAT         = -8.6927      # Szélességi fok
+LON         = 115.1778             # Hosszúsági fok
+EXTENT_M    = 5000                # Fél-extent méterben (pl. 2000 = ~4 km átmérő)
 SIZE_KEY    = "50x70"             # Plakátméret kulcs (cm)
-STYLE       = "vintage_atlas"    # Stílus neve (lásd fent)
+STYLE       = "urban_modern"    # Stílus neve (lásd fent)
 SUBTITLE    = None                # None → automatikus koordináta felirat
 OUTPUT_DIR_BASE = "output"        # Kimeneti mappa (a project gyökéréhez képest)
 USE_CACHE   = True                # OSM gyorsítótár használata
 OVERPASS_DEBUG = True            # True -> részletes Overpass diagnosztikai log
+BUILDINGS_ONLY = False            # True -> csak épületek (út/víz/zöld/vasút/ösvény nélkül)
 
 # =============================================================================
 # (Alatta nem kell módosítani, hacsak nem tudod, mit csinálsz.)
@@ -89,11 +90,12 @@ def _safe_name(text: str) -> str:
     return re.sub(r"[^A-Z0-9]+", "_", text).strip("_")
 
 
-def _build_output_name(city: str, style: str, extent: int, size_key: str) -> str:
+def _build_output_name(city: str, style: str, extent: int, size_key: str, buildings_only: bool = False) -> str:
     city_slug  = _safe_name(city)
     style_slug = style.lower().replace(" ", "_")
     size_slug  = size_key.replace("x", "x")
-    return f"{city_slug}_{style_slug}_{extent}m_{size_slug}.webp"
+    suffix = "_buildings_only" if buildings_only else ""
+    return f"{city_slug}_{style_slug}_{extent}m_{size_slug}{suffix}.webp"
 
 
 def _resize_if_needed(img: Image.Image) -> Image.Image:
@@ -163,7 +165,7 @@ def main() -> None:
         else f"{LAT:.4f}° N  {LON:.4f}° E"
     )
 
-    webp_name = _build_output_name(CITY_NAME, STYLE, EXTENT_M, SIZE_KEY)
+    webp_name = _build_output_name(CITY_NAME, STYLE, EXTENT_M, SIZE_KEY, BUILDINGS_ONLY)
     webp_path = output_dir / webp_name
 
     print("=" * 60)
@@ -171,6 +173,7 @@ def main() -> None:
     print(f"  Stílus  : {STYLE}")
     print(f"  Méret   : {SIZE_KEY} cm  |  extent: {EXTENT_M} m")
     print(f"  Koord.  : {LAT}, {LON}")
+    print(f"  Mód     : {'BUILDINGS ONLY' if BUILDINGS_ONLY else 'NORMAL'}")
     print(f"  Overpass debug: {'ON' if OVERPASS_DEBUG else 'OFF'}")
     print(f"  Kimenet : {webp_path}")
     print("=" * 60)
@@ -188,6 +191,7 @@ def main() -> None:
             preview_mode=False,
             order_id="MANUAL",
             use_cache=USE_CACHE,
+            buildings_only=BUILDINGS_ONLY,
         )
     finally:
         if prev_overpass_debug is None:

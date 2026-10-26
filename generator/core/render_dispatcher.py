@@ -106,6 +106,7 @@ def render_product(
     order_id: str | None = None,
     use_cache: bool = True,
     output_png_path: Path | None = None,
+    buildings_only: bool = False,
 ):
 
     if style_name not in STYLE_REGISTRY:
@@ -192,6 +193,7 @@ def render_product(
                 preview_mode=preview_mode,
                 filename_prefix=filename_prefix,
                 use_cache=use_cache,
+                buildings_only=buildings_only,
             )
 
         elif style_def.engine == EngineType.LINE:
