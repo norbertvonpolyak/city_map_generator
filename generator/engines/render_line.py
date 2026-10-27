@@ -143,6 +143,26 @@ def _prepare_polygon_layer(raw_layer: gpd.GeoDataFrame | None, target_crs, clip_
     return gpd.clip(layer_p, gpd.GeoSeries([clip_rect], crs=target_crs))
 
 
+def _prepare_line_layer(raw_layer: gpd.GeoDataFrame | None, target_crs, clip_rect) -> gpd.GeoDataFrame:
+    if raw_layer is None or len(raw_layer) == 0:
+        return gpd.GeoDataFrame(geometry=[], crs=target_crs)
+
+    layer = raw_layer[(~raw_layer.geometry.isna()) & (~raw_layer.geometry.is_empty)]
+    if len(layer) == 0:
+        return gpd.GeoDataFrame(geometry=[], crs=target_crs)
+
+    layer_p = layer.to_crs(target_crs)
+    layer_p = layer_p[layer_p.geom_type.isin(["LineString", "MultiLineString"])]
+    if len(layer_p) == 0:
+        return gpd.GeoDataFrame(geometry=[], crs=target_crs)
+
+    return gpd.clip(layer_p, gpd.GeoSeries([clip_rect], crs=target_crs))
+
+
+def _series_or_none(gdf: gpd.GeoDataFrame, column: str):
+    return gdf[column] if column in gdf.columns else None
+
+
 def _is_bridge_value(v) -> bool:
     if isinstance(v, (list, tuple, set)):
         return any(_is_bridge_value(item) for item in v)
@@ -269,11 +289,40 @@ def render_map_line(
         edges_p = gpd.clip(edges_p, gpd.GeoSeries([clip_rect], crs=edges_p.crs))
         edges_p = edges_p[~edges_p.is_empty]
 
+        gdf_all_raw = shared_bundle["gdf_all_raw"]
+        coast_raw = shared_bundle["coast_raw"]
         water_raw = shared_bundle["water_raw"]
         green_raw = shared_bundle["green_raw"]
 
         water_p = _prepare_polygon_layer(water_raw, edges_p.crs, clip_rect)
         green_p = _prepare_polygon_layer(green_raw, edges_p.crs, clip_rect)
+        gdf_all_p = _prepare_polygon_layer(gdf_all_raw, edges_p.crs, clip_rect)
+        gdf_all_any_p = gpd.GeoDataFrame(geometry=[], crs=edges_p.crs)
+        coast_lines_p = _prepare_line_layer(coast_raw, edges_p.crs, clip_rect)
+
+        if gdf_all_raw is not None and len(gdf_all_raw) > 0:
+            gdf_all_raw = gdf_all_raw[(~gdf_all_raw.geometry.isna()) & (~gdf_all_raw.geometry.is_empty)]
+            if len(gdf_all_raw) > 0:
+                gdf_all_any_p = gdf_all_raw.to_crs(edges_p.crs)
+                gdf_all_any_p = gpd.clip(gdf_all_any_p, gpd.GeoSeries([clip_rect], crs=edges_p.crs))
+
+        landuse = _series_or_none(gdf_all_p, "landuse")
+        amenity = _series_or_none(gdf_all_p, "amenity")
+        natural = _series_or_none(gdf_all_p, "natural")
+        man_made = _series_or_none(gdf_all_any_p, "man_made")
+
+        harbour_p = gdf_all_p[(landuse == "harbour") if landuse is not None else False]
+        marina_p = gdf_all_p[(amenity == "marina") if amenity is not None else False]
+        shingle_p = gdf_all_p[(natural == "shingle") if natural is not None else False]
+        beach_p = gdf_all_p[(natural.isin(["beach", "sand"])) if natural is not None else False]
+        pier_p = gdf_all_any_p[
+            ((man_made == "pier") if man_made is not None else False)
+            & gdf_all_any_p.geom_type.isin(["LineString", "MultiLineString"])
+        ]
+        breakwater_p = gdf_all_any_p[
+            ((man_made == "breakwater") if man_made is not None else False)
+            & gdf_all_any_p.geom_type.isin(["LineString", "MultiLineString"])
+        ]
 
         if "highway" in edges_p.columns:
             edges_p = edges_p.copy()
@@ -283,6 +332,13 @@ def render_map_line(
             "edges_p": edges_p,
             "water_p": water_p,
             "green_p": green_p,
+            "harbour_p": harbour_p,
+            "marina_p": marina_p,
+            "shingle_p": shingle_p,
+            "beach_p": beach_p,
+            "coast_lines_p": coast_lines_p,
+            "pier_p": pier_p,
+            "breakwater_p": breakwater_p,
         }
 
     shared_bundle = load_or_build_shared_osm_bundle(
@@ -292,6 +348,7 @@ def render_map_line(
         half_width_m=bundle_hw,
         half_height_m=bundle_hh,
         use_cache=use_cache,
+        include_building_features=True,
     )
 
     geometry_data = _build_geometry()
@@ -299,6 +356,13 @@ def render_map_line(
     edges_p = geometry_data["edges_p"]
     water_p = geometry_data["water_p"]
     green_p = geometry_data["green_p"]
+    harbour_p = geometry_data["harbour_p"]
+    marina_p = geometry_data["marina_p"]
+    shingle_p = geometry_data["shingle_p"]
+    beach_p = geometry_data["beach_p"]
+    coast_lines_p = geometry_data["coast_lines_p"]
+    pier_p = geometry_data["pier_p"]
+    breakwater_p = geometry_data["breakwater_p"]
 
     # -----------------------------------------------------------------------
     # PLOT
@@ -378,6 +442,102 @@ def render_map_line(
             alpha=0.48,
             antialiased=True,
             zorder=2,
+        )
+
+    if palette_name == "vintage_atlas":
+        harbour_color = _blend_towards(render_cfg.parks, render_cfg.water, 0.38)
+        marina_color = _blend_towards(render_cfg.parks, render_cfg.water, 0.28)
+        shingle_color = _blend_towards("#CFC6B8", render_cfg.water, 0.36)
+        beach_color = _blend_towards("#E4D9C8", render_cfg.water, 0.28)
+        coastline_color = _blend_towards("#6E665D", render_cfg.water, 0.14)
+        pier_color = _blend_towards("#4E4A46", render_cfg.water, 0.08)
+        breakwater_color = _blend_towards("#3F3B38", render_cfg.water, 0.06)
+        harbour_edge = _blend_towards(harbour_color, "#2B2A2A", 0.18)
+        marina_edge = _blend_towards(marina_color, "#2B2A2A", 0.18)
+        shingle_edge = _blend_towards(shingle_color, "#2B2A2A", 0.14)
+    else:
+        harbour_color = _blend_towards(render_cfg.parks, render_cfg.water, 0.26)
+        marina_color = _blend_towards(render_cfg.parks, render_cfg.water, 0.18)
+        shingle_color = _blend_towards("#C9C2B4", render_cfg.water, 0.20)
+        beach_color = _blend_towards("#D5CCBA", render_cfg.water, 0.18)
+        coastline_color = _blend_towards(render_cfg.water, render_cfg.road_colors.get("default", "#777777"), 0.28)
+        pier_color = _blend_towards(render_cfg.road_colors.get("default", "#777777"), render_cfg.water, 0.16)
+        breakwater_color = _blend_towards(render_cfg.road_colors.get("primary", "#666666"), render_cfg.water, 0.10)
+        harbour_edge = _blend_towards(harbour_color, render_cfg.background, 0.25)
+        marina_edge = _blend_towards(marina_color, render_cfg.background, 0.25)
+        shingle_edge = _blend_towards(shingle_color, render_cfg.background, 0.18)
+
+    if len(beach_p) > 0:
+        beach_p.plot(
+            ax=ax,
+            color=beach_color,
+            edgecolor="none",
+            alpha=0.26 if palette_name == "vintage_atlas" else 0.20,
+            antialiased=True,
+            zorder=1.10,
+        )
+
+    if len(harbour_p) > 0:
+        harbour_p.plot(
+            ax=ax,
+            color=harbour_color,
+            edgecolor=harbour_edge,
+            linewidth=0.10,
+            alpha=0.42 if palette_name == "vintage_atlas" else 0.32,
+            antialiased=True,
+            zorder=1.15,
+        )
+
+    if len(marina_p) > 0:
+        marina_p.plot(
+            ax=ax,
+            color=marina_color,
+            edgecolor=marina_edge,
+            linewidth=0.12,
+            alpha=0.38 if palette_name == "vintage_atlas" else 0.28,
+            antialiased=True,
+            zorder=1.18,
+        )
+
+    if len(shingle_p) > 0:
+        shingle_p.plot(
+            ax=ax,
+            color=shingle_color,
+            edgecolor=shingle_edge,
+            linewidth=0.04,
+            alpha=0.28 if palette_name == "vintage_atlas" else 0.24,
+            antialiased=True,
+            zorder=1.12,
+        )
+
+    if len(coast_lines_p) > 0:
+        coast_lines_p.plot(
+            ax=ax,
+            color=coastline_color,
+            linewidth=0.46 if palette_name == "vintage_atlas" else 0.40,
+            alpha=0.84 if palette_name == "vintage_atlas" else 0.72,
+            antialiased=True,
+            zorder=1.30,
+        )
+
+    if len(pier_p) > 0:
+        pier_p.plot(
+            ax=ax,
+            color=pier_color,
+            linewidth=0.62 if palette_name == "vintage_atlas" else 0.52,
+            alpha=0.84 if palette_name == "vintage_atlas" else 0.76,
+            antialiased=True,
+            zorder=1.34,
+        )
+
+    if len(breakwater_p) > 0:
+        breakwater_p.plot(
+            ax=ax,
+            color=breakwater_color,
+            linewidth=0.70 if palette_name == "vintage_atlas" else 0.60,
+            alpha=0.86 if palette_name == "vintage_atlas" else 0.78,
+            antialiased=True,
+            zorder=1.35,
         )
 
     edges_p = edges_p.copy()

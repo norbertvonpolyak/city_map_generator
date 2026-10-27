@@ -207,6 +207,7 @@ def render_map_building(
     network_type_draw: str = "drive",
     min_building_area: float = 15.0,
     use_cache: bool = True,
+    buildings_only: bool = False,
 ) -> MapLayerResult:
 
     print(">>> ENTER render_map_building")
@@ -219,8 +220,8 @@ def render_map_building(
     if not isinstance(style_cfg, BuildingStyleConfig):
         raise TypeError(f"Style '{palette_name}' is not building-based.")
 
-    # No palette is forced to building-only mode.
-    render_only_buildings = False
+    # Optional: render only building footprints (no roads, water, green, paths, rail).
+    render_only_buildings = buildings_only
 
     # Keep surface treatment style-specific so other building palettes stay unchanged.
     use_surface_texture = palette_name == "pretty_buildings"
@@ -290,16 +291,16 @@ def render_map_building(
 
         gdf_all = gdf_all[gdf_all.geometry.notnull()]
 
-        gdf_all_p = ox.projection.project_gdf(gdf_all)
+        gdf_all_any_p = ox.projection.project_gdf(gdf_all)
 
-        gdf_all_p = gdf_all_p[
-            gdf_all_p.geom_type.isin(["Polygon", "MultiPolygon"])
-        ]
-
-        gdf_all_p = gpd.clip(
-            gdf_all_p,
-            gpd.GeoSeries([clip_rect], crs=gdf_all_p.crs),
+        gdf_all_any_p = gpd.clip(
+            gdf_all_any_p,
+            gpd.GeoSeries([clip_rect], crs=gdf_all_any_p.crs),
         )
+
+        gdf_all_p = gdf_all_any_p[
+            gdf_all_any_p.geom_type.isin(["Polygon", "MultiPolygon"])
+        ]
 
         trees_p = gpd.GeoDataFrame(geometry=[], crs=gdf_all_p.crs)
         if not render_only_buildings:
@@ -402,6 +403,7 @@ def render_map_building(
                 islands_p = islands_p[~islands_p.is_empty]
 
         coast_water = None
+        coast_lines_p = gpd.GeoDataFrame(geometry=[], crs=gdf_all_p.crs)
         if not render_only_buildings:
             coast = shared_bundle["coast_raw"]
 
@@ -419,9 +421,11 @@ def render_map_building(
                     gpd.GeoSeries([clip_rect], crs=coast_p.crs),
                 )
 
-                coast_lines = coast_p.geometry
+                coast_lines_p = coast_p[
+                    coast_p.geom_type.isin(["LineString", "MultiLineString"])
+                ]
 
-                water_polygons = list(polygonize(coast_lines))
+                water_polygons = list(polygonize(coast_lines_p.geometry))
 
                 if len(water_polygons) > 0:
 
@@ -438,12 +442,14 @@ def render_map_building(
         return {
             "edges_p": edges_p,
             "gdf_all_p": gdf_all_p,
+            "gdf_all_any_p": gdf_all_any_p,
             "trees_p": trees_p,
             "waterway_p": waterway_p,
             "railway_p": railway_p,
             "paths_p": paths_p,
             "islands_p": islands_p,
             "coast_water": coast_water,
+            "coast_lines_p": coast_lines_p,
             "bounds": (minx, maxx, miny, maxy),
         }
 
@@ -454,19 +460,22 @@ def render_map_building(
         half_width_m=bundle_hw,
         half_height_m=bundle_hh,
         use_cache=use_cache,
-        include_building_features=True,
+        include_building_features=not render_only_buildings,
+        buildings_only_mode=render_only_buildings,
     )
 
     geometry_data = _build_geometry()
 
     edges_p = geometry_data["edges_p"]
     gdf_all_p = geometry_data["gdf_all_p"]
+    gdf_all_any_p = geometry_data["gdf_all_any_p"]
     trees_p = geometry_data["trees_p"]
     waterway_p = geometry_data["waterway_p"]
     railway_p = geometry_data["railway_p"]
     paths_p = geometry_data["paths_p"]
     islands_p = geometry_data["islands_p"]
     coast_water = geometry_data["coast_water"]
+    coast_lines_p = geometry_data["coast_lines_p"]
     minx, maxx, miny, maxy = geometry_data["bounds"]
 
     draw_green_layers = (not render_only_buildings) and (palette_name != "mono_black")
@@ -487,6 +496,7 @@ def render_map_building(
     amenity = col(gdf_all_p, "amenity")
     place = col(gdf_all_p, "place")
     highway = col(gdf_all_p, "highway")
+    man_made = col(gdf_all_any_p, "man_made")
 
     # =============================================================================
     # BUILDINGS
@@ -552,6 +562,28 @@ def render_map_building(
 
     beach_p = gdf_all_p[
         (natural.isin(["beach", "sand"])) if natural is not None else False
+    ]
+
+    shingle_p = gdf_all_p[
+        (natural == "shingle") if natural is not None else False
+    ]
+
+    harbour_p = gdf_all_p[
+        (landuse == "harbour") if landuse is not None else False
+    ]
+
+    marina_p = gdf_all_p[
+        (amenity == "marina") if amenity is not None else False
+    ]
+
+    pier_p = gdf_all_any_p[
+        ((man_made == "pier") if man_made is not None else False)
+        & gdf_all_any_p.geom_type.isin(["LineString", "MultiLineString", "Polygon", "MultiPolygon"])
+    ]
+
+    breakwater_p = gdf_all_any_p[
+        ((man_made == "breakwater") if man_made is not None else False)
+        & gdf_all_any_p.geom_type.isin(["LineString", "MultiLineString", "Polygon", "MultiPolygon"])
     ]
 
     squares_p = gdf_all_p[
@@ -621,6 +653,18 @@ def render_map_building(
             beach_edge = "none"
             parking_color = "#E6E6E6"
             industrial_color = "#DADADA"
+
+        harbour_color = _blend_towards(style_cfg.water, style_cfg.background, 0.20)
+        marina_color = _blend_towards(style_cfg.water, style_cfg.background, 0.12)
+        shingle_color = _blend_towards(beach_color, style_cfg.background, 0.06)
+        coastline_color = _blend_towards(style_cfg.water, style_cfg.road, 0.34)
+        pier_color = _blend_towards(style_cfg.road, style_cfg.water, 0.36)
+        breakwater_color = _blend_towards(style_cfg.road, style_cfg.background, 0.10)
+
+        if palette_name == "midnight_blue":
+            coastline_color = _blend_towards(style_cfg.water, "#F0D89B", 0.42)
+            pier_color = _blend_towards(style_cfg.road, "#F0D89B", 0.28)
+            breakwater_color = _blend_towards(style_cfg.road, "#E8E8E8", 0.24)
 
         # water
         dissolved_water = None
@@ -728,7 +772,65 @@ def render_map_building(
                 color=beach_color,
                 edgecolor=beach_edge,
                 linewidth=0.06 if palette_name == "arctic_blue" else 0,
-                zorder=1.7,
+                zorder=1.54,
+            )
+
+        if len(shingle_p) > 0:
+            shingle_p = _mask_out_water(shingle_p, water_mask_geom)
+            shingle_p.plot(
+                ax=ax,
+                color=shingle_color,
+                edgecolor=_blend_towards(shingle_color, style_cfg.background, 0.20),
+                linewidth=0.04,
+                alpha=0.48,
+                zorder=1.56,
+            )
+
+        if len(coast_lines_p) > 0:
+            coast_lines_p.plot(
+                ax=ax,
+                color=coastline_color,
+                linewidth=0.52 if palette_name == "midnight_blue" else 0.44,
+                alpha=0.88 if palette_name == "midnight_blue" else 0.78,
+                zorder=1.80,
+            )
+
+        if len(pier_p) > 0:
+            pier_p.plot(
+                ax=ax,
+                color=pier_color,
+                linewidth=0.60 if palette_name == "midnight_blue" else 0.50,
+                alpha=0.80,
+                zorder=1.83,
+            )
+
+        if len(breakwater_p) > 0:
+            breakwater_p.plot(
+                ax=ax,
+                color=breakwater_color,
+                linewidth=0.74 if palette_name == "midnight_blue" else 0.62,
+                alpha=0.82,
+                zorder=1.84,
+            )
+
+        if len(harbour_p) > 0:
+            harbour_p.plot(
+                ax=ax,
+                color=harbour_color,
+                edgecolor=_blend_towards(harbour_color, style_cfg.background, 0.22),
+                linewidth=0.10,
+                alpha=0.34,
+                zorder=1.93,
+            )
+
+        if len(marina_p) > 0:
+            marina_p.plot(
+                ax=ax,
+                color=marina_color,
+                edgecolor=_blend_towards(marina_color, style_cfg.background, 0.24),
+                linewidth=0.14,
+                alpha=0.31,
+                zorder=1.94,
             )
 
         if len(squares_p) > 0:
@@ -930,7 +1032,7 @@ def render_map_building(
     else:
         bridges = edges_p.iloc[0:0]
 
-    if len(bridges) > 0:
+    if (not render_only_buildings) and len(bridges) > 0:
         road_width_base = style_cfg.road_style.base_width
         multipliers = style_cfg.road_style.multipliers
         bridge_color = _bridge_color_for_style(palette_name, style_cfg.road, style_cfg.water)

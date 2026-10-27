@@ -70,6 +70,7 @@ _FEATURE_TAGS_BUILDINGS = {
         "village_green",
         "basin",
         "reservoir",
+        "harbour",
         "industrial",
         "commercial",
         "retail",
@@ -100,20 +101,14 @@ _FEATURE_TAGS_BUILDINGS = {
         "wetland",
         "heath",
         "fell",
-        "bay",
-        "strait",
         "beach",
         "sand",
-        "tree",
-        "coastline",
-        "island",
+        "shingle",
     ],
-    "water": True,
-    "waterway": True,
-    "railway": True,
-    "amenity": ["parking", "grave_yard", "school", "college", "university"],
-    "place": ["square", "island", "islet"],
-    "highway": ["pedestrian", "footway", "path", "track", "steps"],
+    "man_made": ["pier", "breakwater"],
+    "amenity": ["parking", "grave_yard", "marina"],
+    "place": ["square"],
+    "highway": ["pedestrian"],
 }
 
 
@@ -618,8 +613,13 @@ def _find_best_road_graph_superset(
     return best_path
 
 
-def _select_required_feature_layers(include_building_features: bool) -> list[str]:
+def _select_required_feature_layers(
+    include_building_features: bool,
+    buildings_only_mode: bool = False,
+) -> list[str]:
     shared_layers = ["water", "green", "coast", "islands"]
+    if buildings_only_mode:
+        return ["buildings"]
     if include_building_features:
         return ["buildings", "trees", "waterway", "railway", "paths", *shared_layers]
     return shared_layers
@@ -903,13 +903,17 @@ def _load_or_build_feature_layers(
     center_lon: float,
     dist_m: int,
     include_building_features: bool,
+    buildings_only_mode: bool,
     debug_enabled: bool,
     debug_summary: dict[str, dict[str, object]] | None,
     overpass_call_counter: dict[str, int],
     cache_stats: dict[str, object],
     use_cache: bool,
 ) -> dict[str, object]:
-    required_layers = _select_required_feature_layers(include_building_features)
+    required_layers = _select_required_feature_layers(
+        include_building_features,
+        buildings_only_mode,
+    )
     loaded_layers: dict[str, object] = {}
 
     for layer_name in required_layers:
@@ -933,8 +937,9 @@ def _assemble_runtime_bundle(
     edges_raw,
     feature_layers: dict[str, object],
     include_building_features: bool,
+    buildings_only_mode: bool,
 ) -> dict[str, object]:
-    gdf_all_raw = feature_layers.get("buildings") if include_building_features else None
+    gdf_all_raw = feature_layers.get("buildings") if (include_building_features or buildings_only_mode) else None
     trees_raw = feature_layers.get("trees") if include_building_features else None
     waterway_raw = feature_layers.get("waterway") if include_building_features else None
     railway_raw = feature_layers.get("railway") if include_building_features else None
@@ -1058,6 +1063,7 @@ def _build_shared_osm_bundle(
     half_width_m: float,
     half_height_m: float,
     include_building_features: bool = True,
+    buildings_only_mode: bool = False,
     use_cache: bool = True,
 ) -> dict[str, object]:
     debug_enabled = _overpass_debug_enabled()
@@ -1086,6 +1092,7 @@ def _build_shared_osm_bundle(
             center_lon=center_lon,
             dist_m=dist_m,
             include_building_features=include_building_features,
+            buildings_only_mode=buildings_only_mode,
             debug_enabled=debug_enabled,
             debug_summary=debug_summary if debug_enabled else None,
             overpass_call_counter=overpass_call_counter,
@@ -1097,6 +1104,7 @@ def _build_shared_osm_bundle(
             edges_raw=edges_raw,
             feature_layers=feature_layers,
             include_building_features=include_building_features,
+            buildings_only_mode=buildings_only_mode,
         )
         cache_stats["bundle_assemble_s"] = float(time.perf_counter() - assemble_started)
 
@@ -1153,6 +1161,17 @@ def _find_superset_bundle_cache(
     return best
 
 
+_OSM_SOURCE_ENV = "MAPCANVAS_OSM_SOURCE"
+_OSM_SOURCES = ("overpass", "pbf")
+
+
+def _selected_osm_source() -> str:
+    value = os.getenv(_OSM_SOURCE_ENV, "").strip().lower() or "overpass"
+    if value not in _OSM_SOURCES:
+        raise ValueError(f"{_OSM_SOURCE_ENV}={value!r} is not supported; use 'overpass' (default) or 'pbf'.")
+    return value
+
+
 def load_or_build_shared_osm_bundle(
     *,
     center_lat: float,
@@ -1162,8 +1181,24 @@ def load_or_build_shared_osm_bundle(
     half_height_m: float,
     use_cache: bool = True,
     include_building_features: bool = False,
+    buildings_only_mode: bool = False,
 ) -> dict[str, object]:
     _ = extent_m  # Maintained for API compatibility; graph identity is dist-based.
+
+    if _selected_osm_source() == "pbf":
+        # Lazy import: the default Overpass path never loads osmium or the PBF store.
+        from generator.core.pbf_source import load_bundle_from_env
+
+        return load_bundle_from_env(
+            center_lat=center_lat,
+            center_lon=center_lon,
+            extent_m=extent_m,
+            half_width_m=half_width_m,
+            half_height_m=half_height_m,
+            use_cache=use_cache,
+            include_building_features=include_building_features,
+            buildings_only_mode=buildings_only_mode,
+        )
 
     return _build_shared_osm_bundle(
         center_lat=center_lat,
@@ -1171,5 +1206,6 @@ def load_or_build_shared_osm_bundle(
         half_width_m=half_width_m,
         half_height_m=half_height_m,
         include_building_features=include_building_features,
+        buildings_only_mode=buildings_only_mode,
         use_cache=use_cache,
     )
