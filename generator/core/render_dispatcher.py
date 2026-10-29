@@ -28,14 +28,14 @@ def _generate_preview_filename(style: str, spec: ProductSpec) -> str:
 
     timestamp = datetime.now ().strftime ("%Y%m%d_%H%M%S")
     unique = uuid4 ().hex [:6]
-    size_key = f"{spec.width_cm}x{spec.height_cm}"
+    size_key = spec.size_label
     return f"{size_key}_{timestamp}_{unique}.png"
 
 
 def _generate_order_filename(order_id: str, spec: ProductSpec) -> str:
     timestamp = datetime.now ().strftime ("%Y%m%d_%H%M%S")
     unique = uuid4 ().hex [:6]
-    size_key = f"{spec.width_cm}x{spec.height_cm}"
+    size_key = spec.size_label
     return f"{order_id}_{size_key}_{timestamp}_{unique}.pdf"
 
 

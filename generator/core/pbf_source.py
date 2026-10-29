@@ -52,6 +52,10 @@ ROAD_BUFFER_M = 500
 ROAD_NETWORK_TYPE = "all"
 STORE_DIR_ENV = "MAPCANVAS_PBF_STORE_DIR"
 PBF_PATH_ENV = "MAPCANVAS_PBF_PATH"
+XML_STORE_DIR_ENV = "MAPCANVAS_XML_STORE_DIR"
+XML_PATH_ENV = "MAPCANVAS_XML_PATH"
+# Selection statistics of the most recent XML bundle (order diagnostics/manifest).
+LAST_XML_BUNDLE_STATS: dict = {}
 _OVERPASS_MEMBER_TYPES = {"n": "node", "w": "way", "r": "relation"}
 
 
@@ -347,4 +351,21 @@ def load_bundle_from_env(**kwargs) -> dict[str, object]:
     with PbfStoreReader(store_dir, pbf_path=pbf_path) as reader:
         bundle = PbfBundleSource(reader).load_bundle(**kwargs)
         print(f"[OSM] Source: PBF store {reader.store_path} (snapshot {reader.meta.get('pbf_replication_timestamp') or 'unknown'})")
+    return bundle
+
+
+def load_xml_bundle_from_env(**kwargs) -> dict[str, object]:
+    """``MAPCANVAS_OSM_SOURCE=xml`` entry point: a store built from a raw OSM XML file (usually per order)."""
+    store_dir = os.getenv(XML_STORE_DIR_ENV, "").strip()
+    if not store_dir:
+        raise PbfStoreError(f"{XML_STORE_DIR_ENV} must point to a store built from the OSM XML when MAPCANVAS_OSM_SOURCE=xml.")
+    xml_path = os.getenv(XML_PATH_ENV, "").strip() or None
+    with PbfStoreReader(store_dir, pbf_path=xml_path) as reader:
+        if reader.meta.get("source_format") != "xml":
+            raise PbfStoreError(f"Store {reader.store_path} was not built from an OSM XML source.")
+        source = PbfBundleSource(reader)
+        bundle = source.load_bundle(**kwargs)
+        LAST_XML_BUNDLE_STATS.clear()
+        LAST_XML_BUNDLE_STATS.update(source.last_stats)
+        print(f"[OSM] Source: OSM XML store {reader.store_path} (source {reader.meta.get('pbf_path')})")
     return bundle

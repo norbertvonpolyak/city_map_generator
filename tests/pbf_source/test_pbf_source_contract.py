@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path
 
@@ -100,11 +101,18 @@ def test_load_bundle_signature_matches_production():
 
 
 def test_production_imports_pbf_code_only_lazily_from_bundle_loader():
-    # M4 contract: osm_bundle_cache imports pbf_source inside the loader only; nothing else imports PBF code.
+    # M4 contract: the core loader and explicit batch entry point import PBF code lazily.
     any_import = re.compile(r"^\s*(from|import)\s+[\w.]*\bpbf_(source|store)\b|^\s*import\s+.*\bpbf_(source|store)\b", re.M)
     top_level_import = re.compile(r"^(from|import)\s+[\w.]*\bpbf_(source|store)\b|^import\s+.*\bpbf_(source|store)\b", re.M)
     allowed = {Path(pbf_source.__file__).resolve(), (REPO / "generator" / "core" / "pbf_store.py").resolve()}
     loader = (REPO / "generator" / "core" / "osm_bundle_cache.py").resolve()
+    batch_modules = {
+        (REPO / "generator" / "batch.py").resolve(),
+        (REPO / "generator" / "batch_pipeline.py").resolve(),
+        (REPO / "generator" / "order_cache.py").resolve(),
+        (REPO / "generator" / "order_renderer.py").resolve(),
+        (REPO / "generator" / "xml_order.py").resolve(),
+    }
     offenders = []
     for path in [*REPO.glob("*.py"), *(REPO / "generator").rglob("*.py")]:
         if path.resolve() in allowed:
@@ -113,6 +121,18 @@ def test_production_imports_pbf_code_only_lazily_from_bundle_loader():
         if path.resolve() == loader:
             if top_level_import.search(text):
                 offenders.append(f"{path.relative_to(REPO)} (top-level)")
+            continue
+        if path.resolve() in batch_modules:
+            tree = ast.parse(text)
+            for statement in tree.body:
+                if isinstance(statement, ast.ImportFrom) and statement.module and re.search(
+                    r"\bpbf_(source|store)\b", statement.module
+                ):
+                    offenders.append(f"{path.relative_to(REPO)} (top-level)")
+                elif isinstance(statement, ast.Import) and any(
+                    re.search(r"\bpbf_(source|store)\b", alias.name) for alias in statement.names
+                ):
+                    offenders.append(f"{path.relative_to(REPO)} (top-level)")
             continue
         if any_import.search(text):
             offenders.append(str(path.relative_to(REPO)))

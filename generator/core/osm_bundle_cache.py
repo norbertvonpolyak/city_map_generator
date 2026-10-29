@@ -1162,13 +1162,13 @@ def _find_superset_bundle_cache(
 
 
 _OSM_SOURCE_ENV = "MAPCANVAS_OSM_SOURCE"
-_OSM_SOURCES = ("overpass", "pbf")
+_OSM_SOURCES = ("overpass", "pbf", "xml")
 
 
 def _selected_osm_source() -> str:
     value = os.getenv(_OSM_SOURCE_ENV, "").strip().lower() or "overpass"
     if value not in _OSM_SOURCES:
-        raise ValueError(f"{_OSM_SOURCE_ENV}={value!r} is not supported; use 'overpass' (default) or 'pbf'.")
+        raise ValueError(f"{_OSM_SOURCE_ENV}={value!r} is not supported; use 'overpass' (default), 'pbf' or 'xml'.")
     return value
 
 
@@ -1185,11 +1185,13 @@ def load_or_build_shared_osm_bundle(
 ) -> dict[str, object]:
     _ = extent_m  # Maintained for API compatibility; graph identity is dist-based.
 
-    if _selected_osm_source() == "pbf":
-        # Lazy import: the default Overpass path never loads osmium or the PBF store.
-        from generator.core.pbf_source import load_bundle_from_env
+    source = _selected_osm_source()
+    if source in ("pbf", "xml"):
+        # Lazy import: the default Overpass path never loads osmium or the local store.
+        from generator.core.pbf_source import load_bundle_from_env, load_xml_bundle_from_env
 
-        return load_bundle_from_env(
+        loader = load_bundle_from_env if source == "pbf" else load_xml_bundle_from_env
+        return loader(
             center_lat=center_lat,
             center_lon=center_lon,
             extent_m=extent_m,

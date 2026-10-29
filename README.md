@@ -380,6 +380,59 @@ python main.py \
   --output-dir output/
 ```
 
+## Manual Offline Order Rendering (PBF or raw OSM XML)
+
+`render_order.py` manually renders an order from a local OSM source using the existing dispatcher, style, layout and export pipeline. The manual source paths do not call a remote OSM API. The current example configuration is Minsk, `luxury_gold`, `50x50`, extent `2500`; edit the configuration block for another order.
+
+Run from the workspace root on Windows with the workspace virtual environment:
+
+```powershell
+.\.venv\Scripts\python.exe .\city_map_generator\render_order.py
+```
+
+### Configuration
+
+- `SOURCE_PATH`: local `.osm`/`.xml` raw OSM XML or `.pbf` source.
+- `CITY_NAME`: product name and output directory slug.
+- `CENTER_LAT`, `CENTER_LON`: explicit map center for PBF. For XML, leave both `None` to derive the center from verified source bounds; an explicit pair overrides it.
+- `STYLE`: any registered style, for example `urban_modern`, `midnight_ember`, or `luxury_gold`.
+- `SIZES`: webshop catalog keys from `SIZES_CM`, such as `"50x70"`, and/or internal physical-size pairs such as `(45, 65)` or `(45.5, 65)`. `None` selects every webshop catalog size.
+- `EXTENT_M`: projected viewport half-height in metres. It is independent of print size. The layout retains the selected style's established margins; for standard Urban Modern, the side/top margins are 4% of the short paper side and the bottom band is 10% of paper height. The map viewport half-width follows the visible map box aspect ratio, so geometry is not stretched.
+- `XML_PERSISTENT_STORE_DIR`: optional persistent XML store. Leave it `None` for the default order-driven workflow.
+
+### Raw OSM XML Processing
+
+For `raw_osm/minszk.osm`, the order runner performs these steps:
+
+1. Streams the file to count objects and verify the XML `<bounds>` against node coordinates and references. In the verified Minsk input, the 14,961 nodes beyond `<bounds>` are Overpass recursion tails referenced by objects inside the declared bounds. Therefore the declared bounds are the verified core-data bounds and determine the midpoint, `53.897, 27.55445`; the wider raw observed-node extrema are also recorded in the manifest.
+2. Uses a sparse in-process reference tracker to select tagged roads, buildings and other production layers, plus all required node references and relation members. It reconstructs complete ways and relations before the existing OSMnx adapter processes them.
+3. Builds a temporary selected-feature SQLite/R-tree store for that order. This is not a permanently retained full-source database. The shared OSM bundle adapter reads it under the opt-in `MAPCANVAS_OSM_SOURCE=xml` mode; PBF remains `pbf` and Overpass remains the default source for other application paths.
+4. Runs the existing style renderer. Projection and geometry clipping happen in the normal engine, after complete OSM geometries have been reconstructed, so crossing roads/buildings are clipped rather than discarded at the source boundary.
+5. Validates and atomically publishes the PDF, preview and manifest. The source XML is never modified. The temporary store and staging files are removed after success or failure; previously validated products are kept if a rerender fails.
+
+PyOsmium's dense `IdTracker` allocates memory based on the largest OSM ID (about 2.12 GB peak for this source). The order path uses sparse ID sets, which built identical store contents at about 0.37 GB peak. PyOsmium file-backed node-location indexes stay locked until process exit on Windows, so they are not used in order jobs that must clean up temporary files.
+
+### Measured Minsk Orders
+
+Measurements below are from this Windows machine and this 405 MB XML source; processing time and peak memory vary by style, extent, physical size and feature density.
+
+| Style / size / extent | Total time | Peak process memory | Peak temporary disk |
+|---|---:|---:|---:|
+| `luxury_gold`, 50×50 cm, 2500 m | 149 s | 1.75 GB | 128 MB |
+| `midnight_ember`, 90×60 cm, 3500 m | 297 s | 2.82 GB | 151 MB |
+
+### PBF Orders
+
+The PBF order resolver validates source identity and reuses a matching local SQLite/R-tree store when available. Otherwise, it prepares a store from the PBF. The PBF itself is not modified. The PBF/Overpass generation paths remain available; Overpass is still the default for the ordinary application pipeline.
+
+### Outputs
+
+Orders now retain only the vector PDF at the requested physical size and a lossy preview WebP. The preview preserves aspect ratio and is capped at 1400 px on its longest side and 150,000 bytes; no full-resolution print WebP is generated.
+
+XML output directory: `output/orders/<city>/<city>_<style>_<WxH>_extent<E>/` with `<product>.pdf`, `<product>_preview.webp`, and `manifest.json`. The manifest records print dimensions, source type/identity/bounds, center, extent, effective geographic coverage, feature counts/warnings, artifact sizes/resolutions, timings, peak memory, temporary disk and cache policy.
+
+PBF output directory: `output/orders/<city>/<style>/<size>/` with `map.pdf`, `preview.webp`, and the city-level `order_manifest.json`. When rerendering older products that still contain a retired print `map.webp`, only that known obsolete deliverable is removed after the replacement PDF and preview validate. `render_order.py` returns a non-zero exit status if any requested size fails.
+
 ---
 
 # Star Map (Rebuilt)

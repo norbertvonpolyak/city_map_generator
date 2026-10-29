@@ -235,6 +235,9 @@ def build_poster_layout(
     
     # Map frame height: poster height minus top margin and bottom passepartout
     visible_height_cm = height_cm - top_margin_cm - bottom_margin_cm
+
+    if visible_width_cm <= 0 or visible_height_cm <= 0:
+        raise ValueError(f"Print size {width_cm}x{height_cm} cm leaves no map area after layout margins")
     
     # Map frame positioned (in bottom-measured coordinates):
     # - x_cm: side_margin_cm from left edge

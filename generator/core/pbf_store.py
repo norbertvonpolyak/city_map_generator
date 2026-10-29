@@ -45,6 +45,7 @@ BUILD_FILE_PREFIX = ".build-"
 SELECTED_RELATION_TYPES = ("boundary", "multipolygon")
 MEMBER_TYPE_CODES = {"n": 0, "w": 1, "r": 2}
 STATUS_COMPLETE = "complete"
+REFERENCE_TRACKING_MODES = ("dense", "sparse")
 _SQL_CHUNK = 900
 _INSERT_BATCH = 20_000
 _ROAD_FILTER_RE = re.compile(r'^\["(?P<key>[^"]+)"~"(?P<pattern>[^"]+)"\]$')
@@ -147,7 +148,17 @@ def file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def source_format(path: Path | str) -> str:
+    name = Path(path).name.casefold()
+    if name.endswith(".pbf"):
+        return "pbf"
+    if name.endswith(".osm") or name.endswith(".xml"):
+        return "xml"
+    raise PbfStoreError(f"Unsupported OSM source format (expected .pbf, .osm or .xml): {path}")
+
+
 def read_pbf_header(pbf_path: Path) -> dict:
+    """Read source header metadata; works for PBF and OSM XML (``<bounds>`` becomes ``bbox``)."""
     reader = osmium.io.Reader(str(pbf_path), osmium.osm.osm_entity_bits.NOTHING)
     try:
         header = reader.header()
@@ -272,8 +283,62 @@ class _BuildLock:
             pass
 
 
-def _select_pass_a(pbf_path: Path, rules: TagRules) -> tuple[osmium.IdTracker, set[int]]:
-    tracker = osmium.IdTracker()
+class _SparseIdTracker:
+    """Set-based stand-in for ``osmium.IdTracker``.
+
+    PyOsmium's IdTracker/IdFilter use dense id bitsets sized by the largest OSM id (~1.7 GB for
+    current node ids), regardless of how many ids are tracked. For small sources this tracker keeps
+    memory proportional to the selection instead.
+    """
+
+    def __init__(self) -> None:
+        self.nodes: set[int] = set()
+        self.ways: set[int] = set()
+        self.relations: set[int] = set()
+
+    def add_node(self, node_id: int) -> None:
+        self.nodes.add(node_id)
+
+    def add_way(self, way_id: int) -> None:
+        self.ways.add(way_id)
+
+    def add_relation(self, relation_id: int) -> None:
+        self.relations.add(relation_id)
+
+    def add_references(self, obj) -> None:
+        if obj.is_way():
+            self.nodes.update(n.ref for n in obj.nodes)
+            return
+        for member in obj.members:
+            {"n": self.nodes, "w": self.ways, "r": self.relations}[member.type].add(member.ref)
+
+    def complete_backward_references(self, path: str, relation_depth: int = 0) -> None:
+        if relation_depth != 0:
+            raise PbfStoreError("Sparse reference tracking supports relation_depth=0 only")
+        for way in osmium.FileProcessor(path, osmium.osm.WAY):
+            if way.id in self.ways:
+                self.nodes.update(n.ref for n in way.nodes)
+
+    def contains(self, obj) -> bool:
+        if obj.is_node():
+            return obj.id in self.nodes
+        if obj.is_way():
+            return obj.id in self.ways
+        return obj.is_relation() and obj.id in self.relations
+
+
+def _new_tracker(reference_tracking: str):
+    if reference_tracking == "dense":
+        return osmium.IdTracker()
+    if reference_tracking == "sparse":
+        return _SparseIdTracker()
+    raise PbfStoreError(f"reference_tracking must be one of {REFERENCE_TRACKING_MODES}, got {reference_tracking!r}")
+
+
+def _select_pass_a(
+    pbf_path: Path, rules: TagRules, reference_tracking: str = "dense",
+) -> tuple[osmium.IdTracker | _SparseIdTracker, set[int]]:
+    tracker = _new_tracker(reference_tracking)
     selected_relations: set[int] = set()
     processor = osmium.FileProcessor(str(pbf_path)).with_filter(osmium.filter.KeyFilter(*rules.selection_keys))
     for obj in processor:
@@ -298,7 +363,7 @@ def _write_pass_b(
     conn: sqlite3.Connection,
     pbf_path: Path,
     rules: TagRules,
-    tracker: osmium.IdTracker,
+    tracker: osmium.IdTracker | _SparseIdTracker,
     selected_relations: set[int],
     location_storage: str,
     counts: dict,
@@ -325,12 +390,13 @@ def _write_pass_b(
             conn.executemany("INSERT INTO relation_members VALUES (?, ?, ?, ?)", member_rows)
             member_rows.clear()
 
-    processor = (
-        osmium.FileProcessor(str(pbf_path))
-        .with_locations(location_storage)
-        .with_filter(tracker.id_filter())
-    )
+    processor = osmium.FileProcessor(str(pbf_path)).with_locations(location_storage)
+    sparse = isinstance(tracker, _SparseIdTracker)
+    if not sparse:
+        processor = processor.with_filter(tracker.id_filter())
     for obj in processor:
+        if sparse and not tracker.contains(obj):
+            continue
         if obj.is_node():
             location = obj.location
             if not location.valid():
@@ -433,12 +499,20 @@ def build_store(
     rules: TagRules | None = None,
     force: bool = False,
     location_storage: str = "flex_mem",
+    reference_tracking: str = "dense",
 ) -> BuildResult:
-    """Build a store into ``store_dir`` and publish it atomically; never replaces a valid store on failure."""
+    """Build a store into ``store_dir`` and publish it atomically; never replaces a valid store on failure.
+
+    Accepts PBF and OSM XML sources. ``reference_tracking="sparse"`` bounds memory for small sources.
+    """
     pbf_path = Path(pbf_path)
     store_dir = Path(store_dir)
     if not pbf_path.is_file():
-        raise PbfStoreError(f"PBF not found: {pbf_path}")
+        label = "PBF" if pbf_path.name.casefold().endswith(".pbf") else "OSM source"
+        raise PbfStoreError(f"{label} not found: {pbf_path}")
+    fmt = source_format(pbf_path)
+    if reference_tracking not in REFERENCE_TRACKING_MODES:
+        raise PbfStoreError(f"reference_tracking must be one of {REFERENCE_TRACKING_MODES}, got {reference_tracking!r}")
     rules = rules or TagRules.from_production()
     store_dir.mkdir(parents=True, exist_ok=True)
     final_path = store_dir / STORE_FILENAME
@@ -461,7 +535,7 @@ def build_store(
             conn.executescript(_SCHEMA_SQL)
 
             pass_a_started = time.perf_counter()
-            tracker, selected_relations = _select_pass_a(pbf_path, rules)
+            tracker, selected_relations = _select_pass_a(pbf_path, rules, reference_tracking)
             counts["pass_a_s"] = round(time.perf_counter() - pass_a_started, 3)
             counts["selected_relations"] = len(selected_relations)
 
@@ -493,6 +567,8 @@ def build_store(
                 "libosmium_version": osmium.version.libosmium_version,
                 "osmnx_version": metadata.version("osmnx"),
                 "location_storage": location_storage,
+                "reference_tracking": reference_tracking,
+                "source_format": fmt,
                 "build_started_utc": started_utc,
             }
             duration = time.perf_counter() - started
